@@ -67,6 +67,8 @@ class LinearModel(pl.LightningModule):
         Cfg basic structure:
             data:
                 num_classes (int): number of classes in the dataset.
+                precompute_embeddings (bool): whether or not the backbone embeddings for images
+                    have been precomputed. Defaults to False.
             max_epochs (int): total number of epochs.
 
             optimizer:
@@ -152,6 +154,9 @@ class LinearModel(pl.LightningModule):
         # for performance
         self.no_channel_last = cfg.performance.disable_channel_last
 
+        # if using precomputed embeddings
+        self.precompute_embeddings = cfg.data.precompute_embeddings
+
         if not self.finetune:
             for param in self.backbone.parameters():
                 param.requires_grad = False
@@ -180,6 +185,8 @@ class LinearModel(pl.LightningModule):
 
         # whether or not to finetune the backbone
         cfg.finetune = omegaconf_select(cfg, "finetune", False)
+        if cfg.data.precompute_embeddings:
+            assert not cfg.finetune, "Cannot finetune with precomputed embeddings"
 
         # default for acc grad batches
         cfg.accumulate_grad_batches = omegaconf_select(cfg, "accumulate_grad_batches", 1)
@@ -293,12 +300,15 @@ class LinearModel(pl.LightningModule):
         Returns:
             Dict[str, Any]: a dict containing features and logits.
         """
+        
+        if self.precompute_embeddings:
+            feats = X
+        else:
+            if not self.no_channel_last:
+                X = X.to(memory_format=torch.channels_last)
 
-        if not self.no_channel_last:
-            X = X.to(memory_format=torch.channels_last)
-
-        with torch.set_grad_enabled(self.finetune):
-            feats = self.backbone(X)
+            with torch.set_grad_enabled(self.finetune):
+                feats = self.backbone(X)
 
         logits = self.classifier(feats)
         return {"logits": logits, "feats": feats}

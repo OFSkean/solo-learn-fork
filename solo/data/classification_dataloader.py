@@ -24,10 +24,13 @@ from typing import Callable, Optional, Tuple, Union
 import torchvision
 from timm.data import create_transform
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.datasets import STL10, ImageFolder
+import tqdm
+import numpy as np
 
 try:
     from solo.data.h5_dataset import H5Dataset
@@ -338,3 +341,74 @@ def prepare_data(
         num_workers=num_workers,
     )
     return train_loader, val_loader
+
+def convert_image_dataset_to_embedding_dataset(
+        dataloader: DataLoader,
+        model: nn.Module,
+        desc: str,
+        shuffle: bool,
+) -> DataLoader:
+    """Converts an image dataloader to an embedding dataloader by passing data 
+    through a provided model. The returned dataloader will use the same 
+    kwargs (batch size, number of workers, pin memory, drop last, shuffle) 
+    as the input dataloader.
+
+    Args:
+        dataloader (DataLoader): dataloader of images
+        model (nn.Module): model to use for embedding
+        desc (str): description of the dataset
+        shuffle (bool): whether to shuffle the dataset
+
+    Returns:
+        DataLoader: dataloader of embeddings
+    """
+    embeddings = []
+    labels = []
+    with torch.no_grad():
+        model.eval()
+        model.cuda()
+
+        for batch in tqdm.tqdm(dataloader, desc=f"Precompute embeddings for {desc} set"):
+            x, y = batch
+            x = x.to(model.device)
+        
+            embedding = model.backbone(x)
+
+            embeddings.extend(embedding.cpu().detach().squeeze().numpy())
+            labels.extend(y.cpu().detach().squeeze().numpy())
+
+    # faster to convert to numpy and then to tensor
+    embeddings = torch.tensor(np.array(embeddings))
+    labels = torch.tensor(np.array(labels))
+    tensor_dataset = torch.utils.data.TensorDataset(embeddings, labels)
+
+    return torch.utils.data.DataLoader(tensor_dataset, 
+                                       batch_size=dataloader.batch_size, 
+                                       shuffle=shuffle, 
+                                       num_workers=dataloader.num_workers, 
+                                       pin_memory=dataloader.pin_memory, 
+                                       drop_last=dataloader.drop_last)
+
+def precompute_classification_datasets(        
+        train_dataloader: DataLoader,
+        val_dataloader: DataLoader,
+        model: nn.Module
+) -> Tuple[DataLoader, DataLoader]:
+    """Converts train/val dataloaders of images to train/val dataloaders of embeddings.
+    This is leads to a significant speedup in linear probe training time, as each image
+    only needs to be passed through the backbone once. Should only be used when NOT
+    finetuning and when classification transforms (horizontal flip, etc) are not crucial
+    to performance
+
+    Args:
+        train_dataloader (DataLoader): train dataloader of images
+        val_dataloader: (DataLoader): val dataloader of images
+        model (nn.Module): model to use for embedding
+    Returns:
+        Tuple[DataLoader, DataLoader]: train/val dataloaders of embeddings
+    """ 
+
+    train_dataloader = convert_image_dataset_to_embedding_dataset(train_dataloader, model, "train", shuffle=True)
+    val_dataloader = convert_image_dataset_to_embedding_dataset(val_dataloader, model, "val", shuffle=False)
+
+    return train_dataloader, val_dataloader

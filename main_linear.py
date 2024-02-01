@@ -33,7 +33,7 @@ from timm.data.mixup import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 
 from solo.args.linear import parse_cfg
-from solo.data.classification_dataloader import prepare_data
+from solo.data.classification_dataloader import precompute_classification_datasets, prepare_data
 from solo.methods.base import BaseMethod
 from solo.methods.linear import LinearModel
 from solo.utils.auto_resumer import AutoResumer
@@ -127,7 +127,13 @@ def main(cfg: DictConfig):
         auto_augment=cfg.auto_augment,
     )
 
-    if cfg.data.format == "dali":
+    
+    if cfg.data.precompute_embeddings:
+        train_loader, val_loader = precompute_classification_datasets(
+            train_loader, val_loader, model
+        )
+
+    elif cfg.data.format == "dali":
         assert (
             _dali_avaliable
         ), "Dali is not currently avaiable, please install it first with pip3 install .[dali]."

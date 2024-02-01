@@ -163,6 +163,10 @@ def parse_cfg(cfg: omegaconf.DictConfig):
     if cfg.data.format == "dali":
         assert cfg.data.dataset in ["imagenet100", "imagenet", "custom"]
 
+    cfg.data.precompute_embeddings = omegaconf_select(cfg, "data.precompute_embeddings", False)
+    if cfg.data.precompute_embeddings:
+        assert cfg.data.format == "image_folder", "Precomputed embeddings are only supported with image_folder format."
+
     # adjust lr according to batch size
     cfg.num_nodes = omegaconf_select(cfg, "num_nodes", 1)
     scale_factor = cfg.optimizer.batch_size * len(cfg.devices) * cfg.num_nodes / 256
