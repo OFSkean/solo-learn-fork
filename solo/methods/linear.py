@@ -156,7 +156,7 @@ class LinearModel(pl.LightningModule):
 
         # if using precomputed embeddings
         self.precompute_embeddings = cfg.data.precompute_embeddings
-
+        self.precompute_noise = cfg.data.precompute_noise
         if not self.finetune:
             for param in self.backbone.parameters():
                 param.requires_grad = False
@@ -187,6 +187,7 @@ class LinearModel(pl.LightningModule):
         cfg.finetune = omegaconf_select(cfg, "finetune", False)
         if cfg.data.precompute_embeddings:
             assert not cfg.finetune, "Cannot finetune with precomputed embeddings"
+        cfg.data.precompute_noise = omegaconf_select(cfg, "data.precompute_noise", 0.2)
 
         # default for acc grad batches
         cfg.accumulate_grad_batches = omegaconf_select(cfg, "accumulate_grad_batches", 1)
@@ -302,7 +303,9 @@ class LinearModel(pl.LightningModule):
         """
         
         if self.precompute_embeddings:
-            feats = X
+            # add gaussian noise to help regularize
+            noise = torch.randn_like(X) * self.precompute_noise if self.training else 0
+            feats = X + noise
         else:
             if not self.no_channel_last:
                 X = X.to(memory_format=torch.channels_last)
