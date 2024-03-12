@@ -11,6 +11,6 @@ def conditional_entropy(X, Y):
     Kx = ku.gaussianKernel(X, X, sigmax)
     Ky = ku.gaussianKernel(Y, Y, sigmay) #kwargs['sigma_y'])
 
-    conde = itl.matrixAlphaJointEntropy([Kx, Ky], 1.01) - itl.matrixAlphaEntropy(Ky, 1.01)
+    conde = itl.matrixAlphaJointEntropy([Kx, Ky], 2) - itl.matrixAlphaEntropy(Ky, 2)
 
     return conde

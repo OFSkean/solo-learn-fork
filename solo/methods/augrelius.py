@@ -248,7 +248,7 @@ class Augrelius(BaseMethod):
         outs = log_classifier_loss(outs, "both")
 
         class_loss = outs["shared_loss"] + outs["exclusive_loss"] + outs["both_loss"]
-        return shared_loss + exclusive_loss + invariance_loss + class_loss 
+        return -shared_loss + exclusive_loss + invariance_loss + class_loss 
     
     def validation_step(
         self,
