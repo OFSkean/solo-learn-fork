@@ -35,6 +35,7 @@ from solo.data.pretrain_dataloader import (
     build_transform_pipeline,
     prepare_dataloader,
     prepare_datasets,
+    make_transforms_augmentation_aware
 )
 from solo.methods import METHODS
 from solo.utils.auto_resumer import AutoResumer
@@ -77,6 +78,10 @@ def main(cfg: DictConfig):
     if not cfg.performance.disable_channel_last:
         model = model.to(memory_format=torch.channels_last)
 
+    # pretrain dataloader
+    if cfg.data.augaware:
+        make_transforms_augmentation_aware()
+        
     # validation dataloader for when it is available
     if cfg.data.dataset == "custom" and (cfg.data.no_labels or cfg.data.val_path is None):
         val_loader = None
@@ -97,7 +102,7 @@ def main(cfg: DictConfig):
             num_workers=cfg.data.num_workers,
         )
 
-    # pretrain dataloader
+
     if cfg.data.format == "dali":
         assert (
             _dali_avaliable

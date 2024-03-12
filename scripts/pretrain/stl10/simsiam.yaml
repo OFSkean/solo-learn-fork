@@ -1,5 +1,6 @@
 defaults:
   - _self_
+  - augmentations: symmetric_weak.yaml
   - wandb: private.yaml
   - override hydra/hydra_logging: disabled
   - override hydra/job_logging: disabled
@@ -10,25 +11,29 @@ hydra:
   run:
     dir: .
 
-name: "barlow_twins-imagenet100-linear"
-pretrained_feature_extractor: None
+name: "simsiam-stl10" # change here for cifar100
+method: "simsiam"
 backbone:
   name: "resnet18"
-pretrain_method: "barlow_twins"
+method_kwargs:
+  proj_hidden_dim: 2048
+  proj_output_dim: 2048
+  pred_hidden_dim: 512
+  temperature: 0.2
 data:
-  dataset: imagenet100
-  train_path: "./datasets/imagenet100/train"
-  val_path: "./datasets/imagenet100/val"
-  format: "dali"
-  num_workers: 16
+  dataset: stl10 # change here for cifar100
+  train_path: "./datasets/stl10"
+  val_path: "./datasets/stl10"
+  format: "image_folder"
+  num_workers: 8
 optimizer:
   name: "sgd"
   batch_size: 256
-  lr: 0.1
-  weight_decay: 0
+  lr: 0.5
+  classifier_lr: 0.1
+  weight_decay: 1e-5
 scheduler:
-  name: "step"
-  lr_decay_steps: [60, 80]
+  name: "warmup_cosine"
 checkpoint:
   enabled: True
   dir: "trained_models"
@@ -37,9 +42,9 @@ auto_resume:
   enabled: True
 
 # overwrite PL stuff
-max_epochs: 100
+max_epochs: 500
 devices: [0]
 sync_batchnorm: True
 accelerator: "gpu"
 strategy: "ddp"
-precision: 16-mixed
+precision: 16

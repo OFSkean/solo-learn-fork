@@ -60,6 +60,8 @@ def add_and_assert_dataset_cfg(cfg: omegaconf.DictConfig) -> omegaconf.DictConfi
     cfg.data.fraction = omegaconf_select(cfg, "data.fraction", -1)
     cfg.debug_augmentations = omegaconf_select(cfg, "debug_augmentations", False)
 
+    cfg.data.augaware = omegaconf_select(cfg, "data.augaware", False)
+
     return cfg
 
 

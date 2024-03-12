@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - augmentations: asymmetric.yaml
+  - augmentations: symmetric.yaml
   - wandb: private.yaml
   - override hydra/hydra_logging: disabled
   - override hydra/job_logging: disabled
@@ -11,23 +11,23 @@ hydra:
   run:
     dir: .
 
-name: "barlow_twins-imagenet100"
-method: "barlow_twins"
+name: "mmcr-stl10" # change here for cifar100
+method: "mmcr"
 backbone:
   name: "resnet18"
 method_kwargs:
   proj_hidden_dim: 2048
-  proj_output_dim: 2048
-  scale_loss: 0.1
+  proj_output_dim: 512
+
 data:
-  dataset: imagenet100
-  train_path: "./datasets/imagenet-100/train"
-  val_path: "./datasets/imagenet-100/val"
-  format: "dali"
-  num_workers: 4
+  dataset: stl10 # change here for cifar100
+  train_path: "./datasets/stl10"
+  val_path: "./datasets/stl10"
+  format: "image_folder"
+  num_workers: 32
 optimizer:
   name: "lars"
-  batch_size: 128
+  batch_size: 256
   lr: 0.3
   classifier_lr: 0.1
   weight_decay: 1e-4
@@ -45,7 +45,7 @@ auto_resume:
   enabled: True
 
 # overwrite PL stuff
-max_epochs: 400
+max_epochs: 500
 devices: [0]
 sync_batchnorm: True
 accelerator: "gpu"

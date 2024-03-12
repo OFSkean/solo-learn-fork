@@ -74,7 +74,7 @@ class CustomDatasetWithoutLabels(Dataset):
         return len(self.images)
 
 
-class GaussianBlur:
+class GaussianBlur(torch.nn.Module):
     def __init__(self, sigma: Sequence[float] = None):
         """Gaussian blur as a callable object.
 
@@ -82,12 +82,28 @@ class GaussianBlur:
             sigma (Sequence[float]): range to sample the radius of the gaussian blur filter.
                 Defaults to [0.1, 2.0].
         """
+        super().__init__()
 
         if sigma is None:
             sigma = [0.1, 2.0]
 
         self.sigma = sigma
 
+    @staticmethod
+    def get_params(lower_bound, upper_bound) -> float:
+        """Get the parameters for the gaussian blur filter.
+
+        Args:
+            img (Image): an image in the PIL.Image format.
+            lower_bound: lower bound for the radius of the gaussian blur filter.
+            upper_bound: upper bound for the radius of the gaussian blur filter.
+
+        Returns:
+            float: radius of the gaussian blur filter.
+        """
+
+        return random.uniform(lower_bound, upper_bound)
+    
     def __call__(self, img: Image) -> Image:
         """Applies gaussian blur to an input image.
 
@@ -98,13 +114,17 @@ class GaussianBlur:
             Image: blurred image.
         """
 
-        sigma = random.uniform(self.sigma[0], self.sigma[1])
+        sigma = self.get_params(self.sigma[0], self.sigma[1])
         img = img.filter(ImageFilter.GaussianBlur(radius=sigma))
         return img
 
 
-class Solarization:
+class Solarization(torch.nn.Module):
     """Solarization as a callable object."""
+
+    @staticmethod
+    def get_params():
+        pass
 
     def __call__(self, img: Image) -> Image:
         """Applies solarization to an input image.
@@ -115,12 +135,17 @@ class Solarization:
         Returns:
             Image: solarized image.
         """
-
+        self.get_params()
         return ImageOps.solarize(img)
 
 
-class Equalization:
+class Equalization(torch.nn.Module):
+    @staticmethod
+    def get_params():
+        pass
+
     def __call__(self, img: Image) -> Image:
+        self.get_params()
         return ImageOps.equalize(img)
 
 
@@ -394,3 +419,6 @@ def prepare_dataloader(
         drop_last=True,
     )
     return train_loader
+
+def make_transforms_augmentation_aware():
+    import solo.data.augmentation_aware_overrides

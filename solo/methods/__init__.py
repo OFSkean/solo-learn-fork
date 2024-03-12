@@ -38,13 +38,14 @@ from solo.methods.vibcreg import VIbCReg
 from solo.methods.vicreg import VICReg
 from solo.methods.wmse import WMSE
 from solo.methods.all4one import All4One
-
+from solo.methods.augrelius import Augrelius
 
 METHODS = {
     # base classes
     "base": BaseMethod,
     "linear": LinearModel,
     # methods
+    "augrelius": Augrelius,
     "barlow_twins": BarlowTwins,
     "byol": BYOL,
     "deepclusterv2": DeepClusterV2,
