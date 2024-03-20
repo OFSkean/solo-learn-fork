@@ -20,6 +20,11 @@ method_kwargs:
   proj_output_dim: 512
   shared_dim: 256
   exclusive_dim: 256
+  kernel_type: gaussian
+  alpha: 1.01
+  conde_loss_weight: 1.0
+  exclusive_loss_weight: 1.0
+  invariance_loss_weight: 1.0
 data:
   dataset: stl10 # change here for cifar100
   train_path: "./datasets/stl10"

@@ -26,5 +26,6 @@ CUDA_LAUNCH_BLOCKING=1 python3 -u main_pretrain.py \
     ++data.augaware=True \
     ++wandb.project="augrelius" \
     ++wandb.enabled=True \
+    ++name="testest" \
     # ++data.train_path="./datasets/imagenet100/train" \
     # ++data.val_path="./datasets/imagenet100/val" \

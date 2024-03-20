@@ -49,6 +49,13 @@ class Augrelius(BaseMethod):
         self.shared_dim: int = cfg.method_kwargs.shared_dim
         self.exclusive_dim: int = cfg.method_kwargs.exclusive_dim
 
+        self.conde_loss_weight: float = cfg.method_kwargs.conde_loss_weight
+        self.exclusive_loss_weight: float = cfg.method_kwargs.exclusive_loss_weight
+        self.invariance_loss_weight: float = cfg.method_kwargs.invariance_loss_weight
+
+        self.kernel_type: str = cfg.method_kwargs.kernel_type
+        self.alpha: float = cfg.method_kwargs.alpha
+
         # projector
         self.mlp = nn.Sequential(
             nn.Linear(self.features_dim, proj_hidden_dim),
@@ -88,11 +95,21 @@ class Augrelius(BaseMethod):
         assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.proj_hidden_dim")
         assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.proj_output_dim")
 
+        # dimensionalities
         cfg.method_kwargs.shared_dim = omegaconf_select(cfg, "method_kwargs.shared_dim", 512)
         cfg.method_kwargs.exclusive_dim = omegaconf_select(cfg, "method_kwargs.exclusive_dim", 512)
         assert cfg.method_kwargs.shared_dim + cfg.method_kwargs.exclusive_dim == cfg.method_kwargs.proj_output_dim, \
             f"shared_dim ({cfg.method_kwargs.shared_dim}) + exclusive_dim ({cfg.method_kwargs.exclusive_dim}) " \
             f"should be equal to proj_output_dim ({cfg.method_kwargs.proj_output_dim})"
+
+        # conde arguments
+        cfg.method_kwargs.kernel_type = omegaconf_select(cfg, "method_kwargs.kernel_type", "gaussian")
+        cfg.method_kwargs.alpha = omegaconf_select(cfg, "method_kwargs.alpha", 1.0)
+
+        # loss tradeoffs
+        cfg.method_kwargs.conde_loss_weight = omegaconf_select(cfg, "method_kwargs.conde_loss_weight", 1.0)
+        cfg.method_kwargs.exclusive_loss_weight = omegaconf_select(cfg, "method_kwargs.exclusive_loss_weight", 1.0)
+        cfg.method_kwargs.invariance_loss_weight = omegaconf_select(cfg, "method_kwargs.invariance_loss_weight", 1.0) 
 
         return cfg
 
@@ -126,6 +143,9 @@ class Augrelius(BaseMethod):
             X = X.to(memory_format=torch.channels_last)
         feats = self.backbone(X)
         feats = self.mlp(feats)
+
+        # feats =  (feats - feats.mean(0)) / feats.std(0) # NxD
+        # feats =  (feats.shape[1]**0.5) * feats / torch.norm(feats, dim=0)
 
         shared_dims, exclusive_dims = torch.split(feats, [self.shared_dim, self.exclusive_dim], dim=1)
 
@@ -223,9 +243,11 @@ class Augrelius(BaseMethod):
         s1, s2 = outs["shared_dims"]
         e1, e2 = outs["exclusive_dims"]
 
-        # VARIANCE SHARED_LOSS
-        shared_loss = conditional_entropy(s1, e1) + conditional_entropy(s2, e2)
-        self.log("train_conde_loss", shared_loss, sync_dist=True)
+        # VARIANCE CONDE LOSS
+        conde_loss = conditional_entropy(s1, e1, kernel_type=self.kernel_type, alpha=self.alpha) + \
+                      conditional_entropy(s2, e2, kernel_type=self.kernel_type, alpha=self.alpha)
+
+        self.log("train_conde_loss", conde_loss, sync_dist=True)
 
         # VARIANCE EXCLUSIVE LOSS with MSE
         e_diff = e1 - e2
@@ -242,13 +264,19 @@ class Augrelius(BaseMethod):
         invariance_loss = F.mse_loss(s1, s2)
         self.log("train_invariance_mseloss", invariance_loss, sync_dist=True)
         
-        # LOG CLASSIFIER LOSSES
+        # CLASSIFIER LOSSES
         outs = log_classifier_loss(outs, "shared")
         outs = log_classifier_loss(outs, "exclusive")
         outs = log_classifier_loss(outs, "both")
 
         class_loss = outs["shared_loss"] + outs["exclusive_loss"] + outs["both_loss"]
-        return -shared_loss + exclusive_loss + invariance_loss + class_loss 
+
+        full_loss = class_loss + \
+                    -(self.conde_loss_weight * conde_loss) + \
+                    self.exclusive_loss_weight * exclusive_loss + \
+                    self.invariance_loss_weight * invariance_loss
+
+        return full_loss
     
     def validation_step(
         self,
