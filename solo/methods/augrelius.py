@@ -46,8 +46,8 @@ class Augrelius(BaseMethod):
 
         proj_hidden_dim: int = cfg.method_kwargs.proj_hidden_dim
         proj_output_dim: int = cfg.method_kwargs.proj_output_dim
-        self.shared_dim: int = cfg.method_kwargs.shared_dim
-        self.exclusive_dim: int = cfg.method_kwargs.exclusive_dim
+        self.shared_dim: int = cfg.method_kwargs.proj_output_dim // 2
+        self.exclusive_dim: int = cfg.method_kwargs.proj_output_dim // 2
 
         self.conde_loss_weight: float = cfg.method_kwargs.conde_loss_weight
         self.exclusive_loss_weight: float = cfg.method_kwargs.exclusive_loss_weight
@@ -95,12 +95,12 @@ class Augrelius(BaseMethod):
         assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.proj_hidden_dim")
         assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.proj_output_dim")
 
-        # dimensionalities
-        cfg.method_kwargs.shared_dim = omegaconf_select(cfg, "method_kwargs.shared_dim", 512)
-        cfg.method_kwargs.exclusive_dim = omegaconf_select(cfg, "method_kwargs.exclusive_dim", 512)
-        assert cfg.method_kwargs.shared_dim + cfg.method_kwargs.exclusive_dim == cfg.method_kwargs.proj_output_dim, \
-            f"shared_dim ({cfg.method_kwargs.shared_dim}) + exclusive_dim ({cfg.method_kwargs.exclusive_dim}) " \
-            f"should be equal to proj_output_dim ({cfg.method_kwargs.proj_output_dim})"
+        # # dimensionalities
+        # cfg.method_kwargs.shared_dim = omegaconf_select(cfg, "method_kwargs.shared_dim", 512)
+        # cfg.method_kwargs.exclusive_dim = omegaconf_select(cfg, "method_kwargs.exclusive_dim", 512)
+        # assert cfg.method_kwargs.shared_dim + cfg.method_kwargs.exclusive_dim == cfg.method_kwargs.proj_output_dim, \
+        #     f"shared_dim ({cfg.method_kwargs.shared_dim}) + exclusive_dim ({cfg.method_kwargs.exclusive_dim}) " \
+        #     f"should be equal to proj_output_dim ({cfg.method_kwargs.proj_output_dim})"
 
         # conde arguments
         cfg.method_kwargs.kernel_type = omegaconf_select(cfg, "method_kwargs.kernel_type", "gaussian")

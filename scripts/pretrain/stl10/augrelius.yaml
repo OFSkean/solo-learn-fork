@@ -18,8 +18,6 @@ backbone:
 method_kwargs:
   proj_hidden_dim: 2048
   proj_output_dim: 512
-  shared_dim: 256
-  exclusive_dim: 256
   kernel_type: gaussian
   alpha: 1.01
   conde_loss_weight: 1.0

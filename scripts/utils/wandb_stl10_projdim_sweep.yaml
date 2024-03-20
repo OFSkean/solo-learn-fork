@@ -1,0 +1,27 @@
+program: main_pretrain.py
+project: augrelius
+name: augrelius_tradeoff_sweep
+
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "--config-path=scripts/pretrain/stl10"
+  - "--config-name=augrelius.yaml"
+  - ${args_no_hyphens}
+
+method: grid
+metric:
+  name: val_acc1
+  goal: maximize
+
+parameters:
+  # ADJUSTABLE PARAMETERS
+  method_kwargs.conde_loss_weight:
+    values: [1.0, 2.0, 5.0]
+  method_kwargs.exclusive_loss_weight:
+    values: [1.0, 2.0, 5.0]
+  method_kwargs.invariance_loss_weight:
+    values: [1.0, 2.0, 5.0]
+  method_kwargs.proj_output_dim:
+    values: [256, 512]
