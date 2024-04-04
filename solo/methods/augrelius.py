@@ -23,7 +23,7 @@ import omegaconf
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from solo.losses.augrelius import conditional_entropy
+from solo.losses.augrelius import conditional_entropy, multiview_conditional_entropy_loss
 from solo.losses.barlow import barlow_loss_func
 from solo.methods.base import BaseMethod
 from solo.utils.metrics import accuracy_at_k, weighted_mean
@@ -176,9 +176,9 @@ class Augrelius(BaseMethod):
             acc5_name = f"{classifier_name}_acc5"
             out.update({loss_name: loss, acc1_name: acc1, acc5_name: acc5})
 
-        update_specificed_online_classifier(out["shared_logits"], "shared")
-        update_specificed_online_classifier(out["exclusive_logits"], "exclusive")
-        update_specificed_online_classifier(out["both_logits"], "both")
+        update_specificed_online_classifier(out["shared_logits"], "class_shared")
+        update_specificed_online_classifier(out["exclusive_logits"], "class_exclusive")
+        update_specificed_online_classifier(out["both_logits"], "class_both")
         
         return out
     
@@ -204,7 +204,7 @@ class Augrelius(BaseMethod):
             outs[acc5_name] = sum(outs[acc5_name]) / self.num_large_crops
 
             metrics = {
-                f"train_{name}_class_loss": outs[loss_name],
+                f"train_{name}_loss": outs[loss_name],
                 f"train_{name}_acc1": outs[acc1_name],
                 f"train_{name}_acc5": outs[acc5_name],
             }
@@ -240,44 +240,81 @@ class Augrelius(BaseMethod):
                 train_targets=targets[mask],
             )
 
-        s1, s2 = outs["shared_dims"]
-        e1, e2 = outs["exclusive_dims"]
-
-        # VARIANCE CONDE LOSS
-        conde_loss = conditional_entropy(s1, e1, kernel_type=self.kernel_type, alpha=self.alpha) + \
-                      conditional_entropy(s2, e2, kernel_type=self.kernel_type, alpha=self.alpha)
+        conde_loss, exclusive_loss, shared_loss = self.compute_ssl_losses(outs, params_targets)
 
         self.log("train_conde_loss", conde_loss, sync_dist=True)
-
-        # VARIANCE EXCLUSIVE LOSS with MSE
-        e_diff = e1 - e2
-        p_diff_hat = self.augmentation_regressor(e_diff)
-
-        p1_targets = torch.stack(params_targets[0]).T.half()
-        p2_targets = torch.stack(params_targets[1]).T.half()
-        p_diff = p1_targets - p2_targets
-
-        exclusive_loss = F.mse_loss(p_diff_hat, p_diff)
         self.log("train_aug_mseloss", exclusive_loss,  sync_dist=True)
-
-        # INVARIANCE LOSS
-        invariance_loss = F.mse_loss(s1, s2)
-        self.log("train_invariance_mseloss", invariance_loss, sync_dist=True)
+        self.log("train_invariance_mseloss", shared_loss, sync_dist=True)
         
         # CLASSIFIER LOSSES
-        outs = log_classifier_loss(outs, "shared")
-        outs = log_classifier_loss(outs, "exclusive")
-        outs = log_classifier_loss(outs, "both")
+        outs = log_classifier_loss(outs, "class_shared")
+        outs = log_classifier_loss(outs, "class_exclusive")
+        outs = log_classifier_loss(outs, "class_both")
 
-        class_loss = outs["shared_loss"] + outs["exclusive_loss"] + outs["both_loss"]
+        class_loss = outs["class_shared_loss"] + outs["class_exclusive_loss"] + outs["class_both_loss"]
 
         full_loss = class_loss + \
                     -(self.conde_loss_weight * conde_loss) + \
                     self.exclusive_loss_weight * exclusive_loss + \
-                    self.invariance_loss_weight * invariance_loss
+                    self.invariance_loss_weight * shared_loss
 
         return full_loss
     
+    def compute_exclusive_invariance_loss(self, e_i, e_j, p_i, p_j):
+        e_diff = e_i - e_j
+        p_diff_hat = self.augmentation_regressor(e_diff)
+
+        p_i = torch.stack(p_i).T.half()
+        p_j = torch.stack(p_j).T.half()
+        p_diff = p_i - p_j
+
+        exclusive_loss = F.mse_loss(p_diff_hat, p_diff)
+        return exclusive_loss
+
+
+    def multiview_exclusive_invariance_loss(self, exclusive_dims, params_targets: torch.Tensor):
+        total_exclusive_loss = 0
+        for i in range(len(exclusive_dims)):
+            for j in range(i+1, len(exclusive_dims)):
+                total_exclusive_loss += self.compute_exclusive_invariance_loss(
+                                            exclusive_dims[i],
+                                            exclusive_dims[j],
+                                            params_targets[i],
+                                            params_targets[j]
+                                        )
+        total_exclusive_loss /= len(exclusive_dims)
+        
+        return total_exclusive_loss
+
+    def multiview_shared_invariance_loss(self, shared_dims):
+        average_embedding = torch.mean(torch.stack(shared_dims), dim=0)
+
+        total_shared_loss = 0
+        for i in range(len(shared_dims)):
+            total_shared_loss += F.mse_loss(shared_dims[i], average_embedding)
+        total_shared_loss /= len(shared_dims)
+
+        return total_shared_loss
+
+    def compute_ssl_losses(self, outs: Dict[str, Any], params_targets: torch.Tensor):
+        conde_loss = multiview_conditional_entropy_loss(
+                        outs["shared_dims"], 
+                        outs["exclusive_dims"], 
+                        self.kernel_type, 
+                        self.alpha
+                    )
+
+        exclusive_invariance_loss = self.multiview_exclusive_invariance_loss(
+                                        outs["exclusive_dims"],
+                                        params_targets
+                                    )
+
+        shared_invariance_loss = self.multiview_shared_invariance_loss(outs["shared_dims"])
+        
+
+        return conde_loss, exclusive_invariance_loss, shared_invariance_loss
+
+        
     def validation_step(
         self,
         batch: List[torch.Tensor],
@@ -304,7 +341,7 @@ class Augrelius(BaseMethod):
             acc5_name = f"{name}_acc5"
 
             metrics = {
-                f"val_{name}_class_loss": outs[loss_name],
+                f"val_{name}_loss": outs[loss_name],
                 f"val_{name}_acc1": outs[acc1_name],
                 f"val_{name}_acc5": outs[acc5_name],
             }
@@ -319,9 +356,9 @@ class Augrelius(BaseMethod):
             self.knn(test_features=out.pop("feats").detach(), test_targets=targets.detach())
 
         # Update CLASSIFIER LOSSES
-        metrics = log_classifier_loss(out, "shared")
-        metrics.update(log_classifier_loss(out, "exclusive"))
-        metrics.update(log_classifier_loss(out, "both"))
+        metrics = log_classifier_loss(out, "class_shared")
+        metrics.update(log_classifier_loss(out, "class_exclusive"))
+        metrics.update(log_classifier_loss(out, "class_both"))
         metrics.update({"batch_size": batch_size})
 
         if update_validation_step_outputs:
@@ -334,8 +371,8 @@ class Augrelius(BaseMethod):
         slightly skewing the metrics.
         """
 
-        for loss_type in ["shared", "exclusive", "both"]:
-            val_loss = weighted_mean(self.validation_step_outputs, f"val_{loss_type}_class_loss", "batch_size")
+        for loss_type in ["class_shared", "class_exclusive", "class_both"]:
+            val_loss = weighted_mean(self.validation_step_outputs, f"val_{loss_type}_loss", "batch_size")
             val_acc1 = weighted_mean(self.validation_step_outputs, f"val_{loss_type}_acc1", "batch_size")
             val_acc5 = weighted_mean(self.validation_step_outputs, f"val_{loss_type}_acc5", "batch_size")
 
