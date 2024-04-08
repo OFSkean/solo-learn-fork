@@ -29,6 +29,7 @@ data:
   val_path: "./datasets/stl10"
   format: "image_folder"
   num_workers: 16
+  augaware: True
 optimizer:
   name: "lars"
   batch_size: 256
@@ -50,7 +51,7 @@ auto_resume:
 
 # overwrite PL stuff
 max_epochs: 500
-devices: [0, 1]
+devices: [0]
 sync_batchnorm: True
 accelerator: "gpu"
 strategy: "ddp"

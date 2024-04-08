@@ -57,15 +57,23 @@ class Augrelius(BaseMethod):
         self.alpha: float = cfg.method_kwargs.alpha
 
         # projector
-        self.mlp = nn.Sequential(
-            nn.Linear(self.features_dim, proj_hidden_dim),
-            nn.BatchNorm1d(proj_hidden_dim),
-            nn.ReLU(),
-            nn.Linear(proj_hidden_dim, proj_hidden_dim),
-            nn.BatchNorm1d(proj_hidden_dim),
-            nn.ReLU(),
-            nn.Linear(proj_hidden_dim, proj_output_dim),
-        )
+        if cfg.method_kwargs.projector_type == "mlp":
+            self.mlp = nn.Sequential(
+                nn.Linear(self.features_dim, proj_hidden_dim),
+                nn.BatchNorm1d(proj_hidden_dim),
+                nn.ReLU(),
+                nn.Linear(proj_hidden_dim, proj_hidden_dim),
+                nn.BatchNorm1d(proj_hidden_dim),
+                nn.ReLU(),
+                nn.Linear(proj_hidden_dim, proj_output_dim),
+            )
+        elif cfg.method_kwargs.projector_type == "identity":
+            self.mlp = nn.Identity()
+
+        elif cfg.method_kwargs.projector_type == "linear":
+            self.mlp = nn.Sequential(
+                nn.Linear(self.features_dim, proj_output_dim),
+            )
 
         # augmentation predictor
         self.augmentation_regressor = nn.Sequential(
@@ -109,7 +117,11 @@ class Augrelius(BaseMethod):
         # loss tradeoffs
         cfg.method_kwargs.conde_loss_weight = omegaconf_select(cfg, "method_kwargs.conde_loss_weight", 1.0)
         cfg.method_kwargs.exclusive_loss_weight = omegaconf_select(cfg, "method_kwargs.exclusive_loss_weight", 1.0)
-        cfg.method_kwargs.invariance_loss_weight = omegaconf_select(cfg, "method_kwargs.invariance_loss_weight", 1.0) 
+        cfg.method_kwargs.invariance_loss_weight = omegaconf_select(cfg, "method_kwargs.invariance_loss_weight", 1.0)
+
+        # projector arguments
+        cfg.method_kwargs.projector_type = omegaconf_select(cfg, "method_kwargs.projector_type", "mlp")
+        assert cfg.method_kwargs.projector_type in ["mlp", "identity", "linear"]
 
         return cfg
 
