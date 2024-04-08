@@ -1,6 +1,6 @@
 program: main_pretrain.py
 project: augrelius
-name: augrelius_multiview
+name: augrelius_multiview_projector
 
 command:
   - ${env}
@@ -15,6 +15,12 @@ metric:
   name: val_acc1
   goal: maximize
 
+# early_terminate:
+#     type: hyperband
+#     min_iter: 100
+#     eta: 2
+#     s: 2
+
 parameters:
   # ADJUSTABLE PARAMETERS
   method_kwargs.conde_loss_weight:
@@ -22,8 +28,12 @@ parameters:
   method_kwargs.exclusive_loss_weight:
     values: [1.0, 2.0, 5.0]
   method_kwargs.invariance_loss_weight:
-    values: [10.0, 20.0]
+    values: [10.0, 20.0, 30.0]
+  method_kwargs.projector_type:
+    values: ["linear", "identity"]
   method_kwargs.proj_output_dim:
     values: [1024]
   augmentations.0.num_crops:
     values: [4, 8]
+
+  

@@ -68,8 +68,9 @@ class Augrelius(BaseMethod):
                 nn.Linear(proj_hidden_dim, proj_output_dim),
             )
         elif cfg.method_kwargs.projector_type == "identity":
-            self.shared_dim = 256
-            self.exclusive_dim = 256
+            self.proj_output_dim = self.features_dim
+            self.shared_dim = self.features_dim//2
+            self.exclusive_dim = self.features_dim//2
             self.mlp = nn.Identity()
 
         elif cfg.method_kwargs.projector_type == "linear":
@@ -85,7 +86,7 @@ class Augrelius(BaseMethod):
         #classifier
         self.classifier_shared = nn.Linear(self.shared_dim, self.num_classes)
         self.classifier_exclusive = nn.Linear(self.exclusive_dim, self.num_classes)
-        self.classifier_both = nn.Linear(proj_output_dim, self.num_classes)
+        self.classifier_both = nn.Linear(self.proj_output_dim, self.num_classes)
 
         del self.classifier
 
