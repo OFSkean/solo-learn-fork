@@ -44,8 +44,8 @@ class Augrelius(BaseMethod):
         """
         super().__init__(cfg)
 
-        proj_hidden_dim: int = cfg.method_kwargs.proj_hidden_dim
-        proj_output_dim: int = cfg.method_kwargs.proj_output_dim
+        self.proj_hidden_dim: int = cfg.method_kwargs.proj_hidden_dim
+        self.proj_output_dim: int = cfg.method_kwargs.proj_output_dim
         self.shared_dim: int = cfg.method_kwargs.proj_output_dim // 2
         self.exclusive_dim: int = cfg.method_kwargs.proj_output_dim // 2
 
@@ -59,13 +59,13 @@ class Augrelius(BaseMethod):
         # projector
         if cfg.method_kwargs.projector_type == "mlp":
             self.mlp = nn.Sequential(
-                nn.Linear(self.features_dim, proj_hidden_dim),
-                nn.BatchNorm1d(proj_hidden_dim),
+                nn.Linear(self.features_dim, self.proj_hidden_dim),
+                nn.BatchNorm1d(self.proj_hidden_dim),
                 nn.ReLU(),
-                nn.Linear(proj_hidden_dim, proj_hidden_dim),
-                nn.BatchNorm1d(proj_hidden_dim),
+                nn.Linear(self.proj_hidden_dim, self.proj_hidden_dim),
+                nn.BatchNorm1d(self.proj_hidden_dim),
                 nn.ReLU(),
-                nn.Linear(proj_hidden_dim, proj_output_dim),
+                nn.Linear(self.proj_hidden_dim, self.proj_output_dim),
             )
         elif cfg.method_kwargs.projector_type == "identity":
             self.proj_output_dim = self.features_dim
@@ -75,7 +75,7 @@ class Augrelius(BaseMethod):
 
         elif cfg.method_kwargs.projector_type == "linear":
             self.mlp = nn.Sequential(
-                nn.Linear(self.features_dim, proj_output_dim),
+                nn.Linear(self.features_dim, self.proj_output_dim),
             )
 
         # augmentation predictor
