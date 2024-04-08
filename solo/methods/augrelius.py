@@ -68,6 +68,8 @@ class Augrelius(BaseMethod):
                 nn.Linear(proj_hidden_dim, proj_output_dim),
             )
         elif cfg.method_kwargs.projector_type == "identity":
+            self.shared_dim = 256
+            self.exclusive_dim = 256
             self.mlp = nn.Identity()
 
         elif cfg.method_kwargs.projector_type == "linear":
