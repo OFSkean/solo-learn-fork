@@ -17,12 +17,12 @@ backbone:
   name: "resnet18"
 method_kwargs:
   proj_hidden_dim: 2048
-  proj_output_dim: 512
+  proj_output_dim: 1024
   kernel_type: gaussian
   alpha: 1.01
   conde_loss_weight: 1.0
   exclusive_loss_weight: 1.0
-  invariance_loss_weight: 1.0
+  invariance_loss_weight: 20.0
 data:
   dataset: stl10 # change here for cifar100
   train_path: "./datasets/stl10"

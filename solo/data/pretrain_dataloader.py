@@ -323,6 +323,7 @@ def prepare_datasets(
     no_labels: Optional[Union[str, Path]] = False,
     download: bool = True,
     data_fraction: float = -1.0,
+    use_val: bool = False,
 ) -> Dataset:
     """Prepares the desired dataset.
 
@@ -355,7 +356,7 @@ def prepare_datasets(
     elif dataset == "stl10":
         train_dataset = dataset_with_index(STL10)(
             train_data_path,
-            split="train+unlabeled",
+            split="train+unlabeled" if not use_val else "test",
             download=download,
             transform=transform,
         )
@@ -399,7 +400,7 @@ def prepare_datasets(
 
 
 def prepare_dataloader(
-    train_dataset: Dataset, batch_size: int = 64, num_workers: int = 4
+    train_dataset: Dataset, batch_size: int = 64, num_workers: int = 4, sampler=None, shuffle=True
 ) -> DataLoader:
     """Prepares the training dataloader for pretraining.
     Args:
@@ -413,10 +414,11 @@ def prepare_dataloader(
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=shuffle,
         num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
+        sampler=sampler if sampler is not None else None,
     )
     return train_loader
 

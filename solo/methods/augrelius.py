@@ -29,7 +29,8 @@ from solo.methods.base import BaseMethod
 from solo.utils.metrics import accuracy_at_k, weighted_mean
 from solo.utils.misc import omegaconf_select
 from typing import Any, Callable, Dict, List, Sequence, Tuple, Union
-
+import wandb
+from torchmetrics.classification import MulticlassConfusionMatrix
 
 class Augrelius(BaseMethod):
     def __init__(self, cfg: omegaconf.DictConfig):
@@ -90,6 +91,9 @@ class Augrelius(BaseMethod):
 
         del self.classifier
 
+        # for analysis of training outputs
+        self.return_train_outputs = cfg.return_train_outputs
+
     @staticmethod
     def add_and_assert_specific_cfg(cfg: omegaconf.DictConfig) -> omegaconf.DictConfig:
         """Adds method specific default values/checks for config.
@@ -126,6 +130,7 @@ class Augrelius(BaseMethod):
         cfg.method_kwargs.projector_type = omegaconf_select(cfg, "method_kwargs.projector_type", "mlp")
         assert cfg.method_kwargs.projector_type in ["mlp", "identity", "linear"]
 
+        cfg.return_train_outputs = omegaconf_select(cfg, "return_train_outputs", False)
         return cfg
 
     @property
@@ -156,6 +161,7 @@ class Augrelius(BaseMethod):
         """
         if not self.no_channel_last:
             X = X.to(memory_format=torch.channels_last)
+        X = X.cuda()
         feats = self.backbone(X)
         feats = self.mlp(feats)
 
@@ -179,7 +185,7 @@ class Augrelius(BaseMethod):
     # OVERRIDES SHARED_STEP IN THE PARENT CLASS
     def _base_shared_step(self, X: torch.Tensor, targets: torch.Tensor) -> Dict:
         out = self(X)
-
+        targets = targets.cuda()
         def update_specificed_online_classifier(logits, classifier_name: str) -> None:
             loss = F.cross_entropy(logits, targets, ignore_index=-1)
 
@@ -255,7 +261,7 @@ class Augrelius(BaseMethod):
                 train_targets=targets[mask],
             )
 
-        conde_loss, exclusive_loss, shared_loss = self.compute_ssl_losses(outs, params_targets)
+        outs, conde_loss, exclusive_loss, shared_loss = self.compute_ssl_losses(outs, params_targets)
 
         self.log("train_conde_loss", conde_loss, sync_dist=True)
         self.log("train_aug_mseloss", exclusive_loss,  sync_dist=True)
@@ -273,7 +279,10 @@ class Augrelius(BaseMethod):
                     self.exclusive_loss_weight * exclusive_loss + \
                     self.invariance_loss_weight * shared_loss
 
-        return full_loss
+        if self.return_train_outputs:
+            return full_loss, outs
+        else:
+            return full_loss
     
     def compute_exclusive_invariance_loss(self, e_i, e_j, p_i, p_j):
         e_diff = e_i - e_j
@@ -282,24 +291,32 @@ class Augrelius(BaseMethod):
         p_i = torch.stack(p_i).T.half()
         p_j = torch.stack(p_j).T.half()
         p_diff = p_i - p_j
+        p_diff = p_diff.cuda()
+
+        diffs_per_batch = (p_diff_hat - p_diff).detach()
 
         exclusive_loss = F.mse_loss(p_diff_hat, p_diff)
-        return exclusive_loss
+        return exclusive_loss, diffs_per_batch, p_diff_hat.detach()
 
 
     def multiview_exclusive_invariance_loss(self, exclusive_dims, params_targets: torch.Tensor):
         total_exclusive_loss = 0
+        diffs_per_batch = []
+        phats_per_batch = []
         for i in range(len(exclusive_dims)):
             for j in range(i+1, len(exclusive_dims)):
-                total_exclusive_loss += self.compute_exclusive_invariance_loss(
+                exclusive_loss, batch_diffs, p_diff_hat = self.compute_exclusive_invariance_loss(
                                             exclusive_dims[i],
                                             exclusive_dims[j],
                                             params_targets[i],
                                             params_targets[j]
                                         )
+                diffs_per_batch.append(batch_diffs)
+                phats_per_batch.append(p_diff_hat)
+                total_exclusive_loss += exclusive_loss
         total_exclusive_loss /= len(exclusive_dims)
         
-        return total_exclusive_loss
+        return total_exclusive_loss, diffs_per_batch, phats_per_batch
 
     def multiview_shared_invariance_loss(self, shared_dims):
         average_embedding = torch.mean(torch.stack(shared_dims), dim=0)
@@ -319,15 +336,17 @@ class Augrelius(BaseMethod):
                         self.alpha
                     )
 
-        exclusive_invariance_loss = self.multiview_exclusive_invariance_loss(
+        exclusive_invariance_loss, diffs_per_batch, phats_per_batch = self.multiview_exclusive_invariance_loss(
                                         outs["exclusive_dims"],
                                         params_targets
                                     )
 
         shared_invariance_loss = self.multiview_shared_invariance_loss(outs["shared_dims"])
         
+        outs.update({"augmentation_errors": diffs_per_batch})
+        outs.update({"phats": phats_per_batch})
 
-        return conde_loss, exclusive_invariance_loss, shared_invariance_loss
+        return outs, conde_loss, exclusive_invariance_loss, shared_invariance_loss
 
         
     def validation_step(
@@ -375,6 +394,9 @@ class Augrelius(BaseMethod):
         metrics.update(log_classifier_loss(out, "class_exclusive"))
         metrics.update(log_classifier_loss(out, "class_both"))
         metrics.update({"batch_size": batch_size})
+        metrics.update({"shared_logits": out["shared_logits"]})
+        metrics.update({"exclusive_logits": out["exclusive_logits"]})
+        metrics.update({"targets": targets})
 
         if update_validation_step_outputs:
             self.validation_step_outputs.append(metrics)
@@ -386,6 +408,7 @@ class Augrelius(BaseMethod):
         slightly skewing the metrics.
         """
 
+        acc1s = []
         for loss_type in ["class_shared", "class_exclusive", "class_both"]:
             val_loss = weighted_mean(self.validation_step_outputs, f"val_{loss_type}_loss", "batch_size")
             val_acc1 = weighted_mean(self.validation_step_outputs, f"val_{loss_type}_acc1", "batch_size")
@@ -393,5 +416,23 @@ class Augrelius(BaseMethod):
 
             log = {f"val_{loss_type}_loss": val_loss, f"val_{loss_type}_acc1": val_acc1, f"val_{loss_type}_acc5": val_acc5}
             self.log_dict(log, sync_dist=True)
+            acc1s.append(val_acc1)
+
+        if self.current_epoch == self.trainer.max_epochs - 1 or self.current_epoch == self.trainer.max_epochs:
+            y_true = torch.tensor([t for out in self.validation_step_outputs for t in out["targets"]]).cuda().float()
+            y_shared_pred = torch.concat([torch.argmax(out["shared_logits"], dim=1) for out in self.validation_step_outputs]).cuda().float()
+            y_exclusive_pred = torch.concat([torch.argmax(out["exclusive_logits"], dim=1) for out in self.validation_step_outputs]).cuda().float()
+
+            conf_matrix = MulticlassConfusionMatrix(num_classes=self.num_classes, normalize='true').to(y_true)
+            conf_matrix.update(y_shared_pred, y_true)
+            fig_shared, ax_ = conf_matrix.plot(labels=self.trainer.val_dataloaders[0].dataset.classes)
+
+            conf_matrix = MulticlassConfusionMatrix(num_classes=self.num_classes, normalize='true').to(y_true)
+            conf_matrix.update(y_exclusive_pred, y_true)
+            fig_exclusive, ax_ = conf_matrix.plot(labels=self.trainer.val_dataloaders[0].dataset.classes)
+
+            self.logger.log_image("confusion_matrix", 
+                                    images=[wandb.Image(fig_shared), wandb.Image(fig_exclusive)], 
+                                    caption=[f"Shared Confusion {acc1s[0]}", f"Exclusive Confusion {acc1s[1]}"])
 
         self.validation_step_outputs.clear()
