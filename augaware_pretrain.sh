@@ -24,10 +24,10 @@ CUDA_LAUNCH_BLOCKING=1 python3 -u main_pretrain.py \
     --config-name $CONFIG_NAME \
     ++data.format="image_folder" \
     ++data.augaware=True \
-    ++data.augadjustable=True \
+    ++data.adjustable_dataloader.enabled=True \
     ++wandb.project="augrelius" \
     ++wandb.enabled=True \
-    ++name="adjust_008_base" \
+    ++name="adjustable_2views" \
     ++augmentations.0.num_crops=2 \
     # ++data.train_path="./datasets/imagenet100/train" \
     # ++data.val_path="./datasets/imagenet100/val" \

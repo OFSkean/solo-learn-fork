@@ -19,7 +19,7 @@ augmentation_error_names = [
     'random_horizontal_flip'
 ]
 
-def adjustable_augmentation_dataset_with_index(DatasetClass: Type[Dataset]) -> Type[Dataset]:
+def adjustable_augmentation_dataset_with_index(cfg, DatasetClass: Type[Dataset]) -> Type[Dataset]:
     """Factory for datasets that also returns the data index.
     Allows augmentations to be adjusted per sample
 
@@ -35,7 +35,12 @@ def adjustable_augmentation_dataset_with_index(DatasetClass: Type[Dataset]) -> T
             super().__init__(*args, **kwargs)
             self.initial_transforms = self.transform # change to initial_transforms to avoid conflicts in DatasetClass
             self.transform = None
-            self.df = pd.read_csv("stl10_preprocessed_info.csv")
+            
+            self.df = pd.read_csv(cfg.data.adjustable_dataloader.initializer_csv_path)
+            self.df['original_rrc_area_lower_bound'] = self.df['rrc_area_lower_bound']
+            self.df['cj_brightness_upper_bound'] = 0.8
+            self.df['cj_contrast_upper_bound'] = 0.8
+            self.df['cj_saturation_upper_bound'] = 0.8
 
             self.__create_augmentation_error_df_columns()
 
@@ -48,6 +53,12 @@ def adjustable_augmentation_dataset_with_index(DatasetClass: Type[Dataset]) -> T
         def __create_augmentation_error_df_columns(self):
             for name in augmentation_error_names:
                 self.df[name] = 0.0
+        
+        def update_logging_path(self, path):
+            self.logging_path = path
+
+        def save_augmentation_parameters(self):
+            self.df.to_csv(f"{self.logging_path}/{cfg.data.adjustable_dataloader.final_csv_path}", index=False)
 
         def update_augmentation_parameters(self, batch_indices, augmentation_error_values, should_adjust=False):
 
@@ -59,19 +70,56 @@ def adjustable_augmentation_dataset_with_index(DatasetClass: Type[Dataset]) -> T
             def update_errors_and_vals(row, error_mean, error_std):
                 val_loc = batch_indices.index(row.name)
                 row[augmentation_error_names] = augmentation_error_values[val_loc]
-
                 values = augmentation_error_values[val_loc]
-                rcc_i_name = augmentation_error_names[0]
-                rcc_j_name = augmentation_error_names[1]
-                if any([abs(values[0] - error_mean[rcc_i_name]) > 2 * error_std[rcc_i_name],
-                        abs(values[1] - error_mean[rcc_j_name]) > 2 * error_std[rcc_j_name]]):
+                stepsize = cfg.data.adjustable_dataloader.stepsize
+                augs_to_adjust = cfg.data.adjustable_dataloader.adjustable_augmentations
 
-                    if values[0] <= error_mean[rcc_i_name] and values[1] <= error_mean[rcc_j_name]:
-                        # make harder
-                        row['rrc_area_lower_bound'] = max(0.08, -0.01 + row['rrc_area_lower_bound'])
-                    elif values[0] >= error_mean[rcc_i_name] and values[1] >= error_mean[rcc_j_name]:
-                        # make easier
-                        row['rrc_area_lower_bound'] = min(0.5, 0.01 + row['rrc_area_lower_bound'])
+                if 'rrc' in augs_to_adjust:
+                    # adjust rcc as needed
+                    rcc_i_name = augmentation_error_names[0]
+                    rcc_j_name = augmentation_error_names[1]
+                    if any([abs(values[0] - error_mean[rcc_i_name]) > 2 * error_std[rcc_i_name],
+                            abs(values[1] - error_mean[rcc_j_name]) > 2 * error_std[rcc_j_name]]):
+
+                        if values[0] <= error_mean[rcc_i_name] and values[1] <= error_mean[rcc_j_name]:
+                            # make harder
+                            row['rrc_area_lower_bound'] = max(0.08, -stepsize + row['rrc_area_lower_bound'])
+                        elif values[0] >= error_mean[rcc_i_name] and values[1] >= error_mean[rcc_j_name]:
+                            # make easier
+                            row['rrc_area_lower_bound'] = min(0.5, stepsize + row['rrc_area_lower_bound'])
+
+                if 'cj_b' in augs_to_adjust:
+                    # adjust brightness as needed
+                    cj_b_name = augmentation_error_names[4]
+                    if abs(values[4] - error_mean[cj_b_name]) > 2 * error_std[cj_b_name]:
+                        if values[4] >= error_mean[cj_b_name]:
+                            # make easier
+                            row['cj_brightness_upper_bound'] = max(0.0, -stepsize + row['cj_brightness_upper_bound'])
+                        else:
+                            # make harder
+                            row['cj_brightness_upper_bound'] = min(0.8, stepsize + row['cj_brightness_upper_bound'])
+
+                if 'cj_c' in augs_to_adjust:
+                    # adjust contrast as needed
+                    cj_c_name = augmentation_error_names[5]
+                    if abs(values[5] - error_mean[cj_c_name]) > 2 * error_std[cj_c_name]:
+                        if values[5] >= error_mean[cj_c_name]:
+                            # make easier
+                            row['cj_contrast_upper_bound'] = max(0.0, -stepsize + row['cj_contrast_upper_bound'])
+                        else:
+                            # make harder
+                            row['cj_contrast_upper_bound'] = min(0.8, stepsize + row['cj_contrast_upper_bound'])
+                
+                if 'cj_s' in augs_to_adjust:
+                    # adjust saturation as needed
+                    cj_s_name = augmentation_error_names[6]
+                    if abs(values[6] - error_mean[cj_s_name]) > 2 * error_std[cj_s_name]:
+                        if values[6] >= error_mean[cj_s_name]:
+                            # make easier
+                            row['cj_saturation_upper_bound'] = max(0.0, -stepsize + row['cj_saturation_upper_bound'])
+                        else:
+                            # make harder
+                            row['cj_saturation_upper_bound'] = min(0.8, stepsize + row['cj_saturation_upper_bound'])
 
                 return row
 

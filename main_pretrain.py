@@ -159,6 +159,7 @@ def main(cfg: DictConfig):
             data_format=cfg.data.format,
             no_labels=cfg.data.no_labels,
             data_fraction=cfg.data.fraction,
+            cfg=cfg
         )
         train_loader = prepare_dataloader(
             train_dataset, batch_size=cfg.optimizer.batch_size, num_workers=cfg.data.num_workers
@@ -221,6 +222,9 @@ def main(cfg: DictConfig):
         # lr logging
         lr_monitor = LearningRateMonitor(logging_interval="step")
         callbacks.append(lr_monitor)
+
+        if cfg.data.augadjustable:
+            train_loader.dataset.update_logging_path(f"trained_models/{cfg.method}/{wandb_logger.version}")
 
     trainer_kwargs = OmegaConf.to_container(cfg)
     # we only want to pass in valid Trainer args, the rest may be user specific

@@ -288,7 +288,7 @@ class Daisy(BaseMethod):
                     self.exclusive_loss_weight * exclusive_loss + \
                     self.invariance_loss_weight * shared_loss
 
-        should_adjust_params = self.current_epoch > 99
+        should_adjust_params = self.current_epoch > self.cfg.data.adjustable_dataloader.epochs_before_adjusting
         self.trainer.train_dataloader.dataset.update_augmentation_parameters(
             sample_indices.tolist(), 
             outs["augmentation_errors"].mean(dim=0).tolist(), 

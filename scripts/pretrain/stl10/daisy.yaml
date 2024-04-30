@@ -31,6 +31,13 @@ data:
   format: "image_folder"
   num_workers: 16
   augaware: True
+  adjustable_dataloader:
+    enabled: True
+    stepsize: 0.01
+    initializer_csv_path: "stl10_preprocessed_info.csv"
+    final_csv_path: "daisy_final_stl10_info.csv"
+    adjustable_augmentations: ['rrc', 'cj_b', 'cj_s', 'cj_c']
+    epochs_before_adjusting: 1
 optimizer:
   name: "lars"
   batch_size: 256
@@ -51,8 +58,8 @@ auto_resume:
   enabled: False
 
 # overwrite PL stuff
-max_epochs: 500
-devices: [0, 1]
+max_epochs: 5
+devices: [0]
 sync_batchnorm: True
 accelerator: "gpu"
 strategy: "ddp"

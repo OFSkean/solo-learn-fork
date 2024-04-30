@@ -323,6 +323,7 @@ def prepare_datasets(
     download: bool = True,
     data_fraction: float = -1.0,
     use_val: bool = False,
+    cfg=None
 ) -> Dataset:
     """Prepares the desired dataset.
 
@@ -353,7 +354,7 @@ def prepare_datasets(
         )
 
     elif dataset == "stl10":
-        train_dataset = dataset_with_index(STL10)(
+        train_dataset = dataset_with_index(cfg, STL10)(
             train_data_path,
             split="train+unlabeled" if not use_val else "test",
             download=download,

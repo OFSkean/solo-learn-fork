@@ -61,7 +61,13 @@ def add_and_assert_dataset_cfg(cfg: omegaconf.DictConfig) -> omegaconf.DictConfi
     cfg.debug_augmentations = omegaconf_select(cfg, "debug_augmentations", False)
 
     cfg.data.augaware = omegaconf_select(cfg, "data.augaware", False)
-    cfg.data.augadjustable = omegaconf_select(cfg, "data.augadjustable", False)
+    cfg.data.adjustable_dataloader = omegaconf_select(cfg, "data.adjustable_dataloader", {})
+    cfg.data.augadjustable = omegaconf_select(cfg, "data.adjustable_dataloader.enabled", False)
+    cfg.data.adjustable_dataloader.stepsize = omegaconf_select(cfg, "data.adjustable_dataloader.stepsize", 0.01)
+    cfg.data.adjustable_dataloader.initializer_csv_path = omegaconf_select(cfg, "data.adjustable_dataloader.initializer_csv_path", "input.csv")
+    cfg.data.adjustable_dataloader.final_csv_path = omegaconf_select(cfg, "data.adjustable_dataloader.final_csv_path", "final.csv")
+    cfg.data.adjustable_dataloader.adjustable_augmentations = omegaconf_select(cfg, "data.adjustable_dataloader.adjustable_augmentations", ['rrc'])
+    cfg.data.adjustable_dataloader.epochs_before_adjusting = omegaconf_select(cfg, "data.adjustable_dataloader.epochs_before_adjusting", 100)
     return cfg
 
 
