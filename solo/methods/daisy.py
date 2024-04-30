@@ -23,7 +23,7 @@ import omegaconf
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from solo.losses.augrelius import conditional_entropy, multiview_conditional_entropy_loss
+from solo.losses.daisy import conditional_entropy, multiview_conditional_entropy_loss
 from solo.losses.barlow import barlow_loss_func
 from solo.methods.base import BaseMethod
 from solo.utils.metrics import accuracy_at_k, weighted_mean
@@ -32,9 +32,9 @@ from typing import Any, Callable, Dict, List, Sequence, Tuple, Union
 import wandb
 from torchmetrics.classification import MulticlassConfusionMatrix
 
-class Augrelius(BaseMethod):
+class Daisy(BaseMethod):
     def __init__(self, cfg: omegaconf.DictConfig):
-        """Implements Augrelius method
+        """Implements Daisy method
 
         Extra cfg settings:
             method_kwargs:
@@ -45,6 +45,8 @@ class Augrelius(BaseMethod):
         """
         super().__init__(cfg)
 
+        self.extender_output_dim: int = cfg.method_kwargs.extender_output_dim
+        self.extender_hidden_dim: int = cfg.method_kwargs.extender_output_dim
         self.proj_hidden_dim: int = cfg.method_kwargs.proj_hidden_dim
         self.proj_output_dim: int = cfg.method_kwargs.proj_output_dim
         self.shared_dim: int = cfg.method_kwargs.proj_output_dim // 2
@@ -57,26 +59,26 @@ class Augrelius(BaseMethod):
         self.kernel_type: str = cfg.method_kwargs.kernel_type
         self.alpha: float = cfg.method_kwargs.alpha
 
-        # projector
-        if cfg.method_kwargs.projector_type == "mlp":
-            self.mlp = nn.Sequential(
-                nn.Linear(self.features_dim, self.proj_hidden_dim),
-                nn.BatchNorm1d(self.proj_hidden_dim),
+        # extender
+        if cfg.method_kwargs.extender_type == "mlp":
+            self.extender = nn.Sequential(
+                nn.Linear(self.features_dim, self.extender_hidden_dim),
+                nn.BatchNorm1d(self.extender_hidden_dim),
                 nn.ReLU(),
-                nn.Linear(self.proj_hidden_dim, self.proj_hidden_dim),
-                nn.BatchNorm1d(self.proj_hidden_dim),
+                nn.Linear(self.extender_hidden_dim, self.extender_hidden_dim),
+                nn.BatchNorm1d(self.extender_hidden_dim),
                 nn.ReLU(),
-                nn.Linear(self.proj_hidden_dim, self.proj_output_dim),
+                nn.Linear(self.extender_hidden_dim, self.extender_output_dim),
             )
-        elif cfg.method_kwargs.projector_type == "identity":
-            self.proj_output_dim = self.features_dim
+        elif cfg.method_kwargs.extender_type == "identity":
+            self.extender_output_dim = self.features_dim
             self.shared_dim = self.features_dim//2
             self.exclusive_dim = self.features_dim//2
-            self.mlp = nn.Identity()
+            self.extender = nn.Identity()
 
-        elif cfg.method_kwargs.projector_type == "linear":
-            self.mlp = nn.Sequential(
-                nn.Linear(self.features_dim, self.proj_output_dim),
+        elif cfg.method_kwargs.extender_type == "linear":
+            self.extender = nn.Sequential(
+                nn.Linear(self.features_dim, self.extender_output_dim),
             )
 
         # augmentation predictor
@@ -105,17 +107,12 @@ class Augrelius(BaseMethod):
             omegaconf.DictConfig: same as the argument, used to avoid errors.
         """
 
-        cfg = super(Augrelius, Augrelius).add_and_assert_specific_cfg(cfg)
+        cfg = super(Daisy, Daisy).add_and_assert_specific_cfg(cfg)
 
-        assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.proj_hidden_dim")
+        assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.extender_output_dim")
         assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.proj_output_dim")
-
-        # # dimensionalities
-        # cfg.method_kwargs.shared_dim = omegaconf_select(cfg, "method_kwargs.shared_dim", 512)
-        # cfg.method_kwargs.exclusive_dim = omegaconf_select(cfg, "method_kwargs.exclusive_dim", 512)
-        # assert cfg.method_kwargs.shared_dim + cfg.method_kwargs.exclusive_dim == cfg.method_kwargs.proj_output_dim, \
-        #     f"shared_dim ({cfg.method_kwargs.shared_dim}) + exclusive_dim ({cfg.method_kwargs.exclusive_dim}) " \
-        #     f"should be equal to proj_output_dim ({cfg.method_kwargs.proj_output_dim})"
+        assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.extender_type")
+        assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.projector_type")
 
         # conde arguments
         cfg.method_kwargs.kernel_type = omegaconf_select(cfg, "method_kwargs.kernel_type", "gaussian")
@@ -126,9 +123,17 @@ class Augrelius(BaseMethod):
         cfg.method_kwargs.exclusive_loss_weight = omegaconf_select(cfg, "method_kwargs.exclusive_loss_weight", 1.0)
         cfg.method_kwargs.invariance_loss_weight = omegaconf_select(cfg, "method_kwargs.invariance_loss_weight", 1.0)
 
+        # extender arguments
+        cfg.method_kwargs.projector_type = omegaconf_select(cfg, "method_kwargs.extender_type", "mlp")
+        cfg.method_kwargs.extender_output_dim = omegaconf_select(cfg, "method_kwargs.extender_output_dim", 1024)
+        cfg.method_kwargs.extender_hidden_dim = omegaconf_select(cfg, "method_kwargs.extender_hidden_dim", 512)
+        assert cfg.method_kwargs.projector_type in ["mlp", "identity", "linear"]
+
         # projector arguments
         cfg.method_kwargs.projector_type = omegaconf_select(cfg, "method_kwargs.projector_type", "mlp")
-        assert cfg.method_kwargs.projector_type in ["mlp", "identity", "linear"]
+        cfg.method_kwargs.extender_output_dim = omegaconf_select(cfg, "method_kwargs.projector_output_dim", 1024)
+        cfg.method_kwargs.extender_hidden_dim = omegaconf_select(cfg, "method_kwargs.projector_hidden_dim", 2048)
+        assert cfg.method_kwargs.projector_type in ["mlp", "linear", "identity"]
 
         cfg.return_train_outputs = omegaconf_select(cfg, "return_train_outputs", False)
         return cfg
@@ -142,7 +147,8 @@ class Augrelius(BaseMethod):
         """
         base_learnable_params = [{"name": "mlp", "params": self.mlp.parameters()},
                                  {"name": "backbone", "params": self.backbone.parameters()},
-                                 {"name": "augmentation_predictor", "params": self.augmentation_regressor.parameters()}]
+                                 {"name": "augmentation_predictor", "params": self.augmentation_regressor.parameters()},
+                                 {"name": "projector", "params": self.mlp.parameters()}]
         
         classifier_learnable_params = [{"name": "classifier_shared", "params": self.classifier_shared.parameters(),  "lr": self.classifier_lr, "weight_decay": 0},
                                        {"name": "classifier_exclusive", "params": self.classifier_exclusive.parameters(),  "lr": self.classifier_lr, "weight_decay": 0},
@@ -235,7 +241,7 @@ class Augrelius(BaseMethod):
             return outs
 
 
-        _, data_and_params, targets = batch
+        sample_indices, data_and_params, targets = batch
         X = [data_and_params[idx][0] for idx in range(self.num_crops)]
         params_targets = [data_and_params[idx][1] for idx in range(self.num_crops)]
         
@@ -279,6 +285,13 @@ class Augrelius(BaseMethod):
                     self.exclusive_loss_weight * exclusive_loss + \
                     self.invariance_loss_weight * shared_loss
 
+        should_adjust_params = self.current_epoch > 99
+        self.trainer.train_dataloader.dataset.update_augmentation_parameters(
+            sample_indices.tolist(), 
+            outs["augmentation_errors"][0].tolist(), 
+            should_adjust=should_adjust_params
+        )
+
         if self.return_train_outputs:
             return full_loss, outs
         else:
@@ -295,7 +308,7 @@ class Augrelius(BaseMethod):
 
         diffs_per_batch = (p_diff_hat - p_diff).detach()
 
-        exclusive_loss = F.mse_loss(p_diff_hat, p_diff)
+        exclusive_loss = F.l1_loss(p_diff_hat, p_diff)
         return exclusive_loss, diffs_per_batch, p_diff_hat.detach()
 
 

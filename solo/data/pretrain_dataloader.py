@@ -30,7 +30,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.dataset import Dataset
 from torchvision import transforms
 from torchvision.datasets import STL10, ImageFolder
-
+import pandas as pd
 try:
     from solo.data.h5_dataset import H5Dataset
 except ImportError:
@@ -55,7 +55,6 @@ def dataset_with_index(DatasetClass: Type[Dataset]) -> Type[Dataset]:
             return (index, *data)
 
     return DatasetWithIndex
-
 
 class CustomDatasetWithoutLabels(Dataset):
     def __init__(self, root, transform=None):
@@ -161,7 +160,7 @@ class NCropAugmentation:
         self.transform = transform
         self.num_crops = num_crops
 
-    def __call__(self, x: Image) -> List[torch.Tensor]:
+    def __call__(self, x: Image, **kwargs) -> List[torch.Tensor]:
         """Applies transforms n times to generate n crops.
 
         Args:
@@ -171,7 +170,7 @@ class NCropAugmentation:
             List[torch.Tensor]: an image in the tensor format.
         """
 
-        return [self.transform(x) for _ in range(self.num_crops)]
+        return [self.transform(x, **kwargs) for _ in range(self.num_crops)]
 
     def __repr__(self) -> str:
         return f"{self.num_crops} x [{self.transform}]"
@@ -181,7 +180,7 @@ class FullTransformPipeline:
     def __init__(self, transforms: Callable) -> None:
         self.transforms = transforms
 
-    def __call__(self, x: Image) -> List[torch.Tensor]:
+    def __call__(self, x: Image, **kwargs) -> List[torch.Tensor]:
         """Applies transforms n times to generate n crops.
 
         Args:
@@ -193,7 +192,7 @@ class FullTransformPipeline:
 
         out = []
         for transform in self.transforms:
-            out.extend(transform(x))
+            out.extend(transform(x, **kwargs))
         return out
 
     def __repr__(self) -> str:
@@ -424,3 +423,8 @@ def prepare_dataloader(
 
 def make_transforms_augmentation_aware():
     import solo.data.augmentation_aware_overrides
+
+def make_dataset_augmentations_adjustable():
+    from solo.data.augmentation_aware_overrides import adjustable_augmentation_dataset_with_index
+    global dataset_with_index 
+    dataset_with_index = adjustable_augmentation_dataset_with_index

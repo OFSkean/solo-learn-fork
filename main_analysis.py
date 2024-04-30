@@ -123,13 +123,15 @@ def main(cfg: DictConfig):
     assert cfg.method in METHODS, f"Choose from {METHODS.keys()}"
 
     if cfg.data.num_large_crops != 2:
-        assert cfg.method in ["wmse", "mae", "augrelius"]
+        assert cfg.method in ["wmse", "mae", "daisy"]
 
    
     # pretrain dataloader
     if cfg.data.augaware:
         make_transforms_augmentation_aware()
-        
+    if cfg.data.augadjustable:
+        assert cfg.data.augaware, "augadjustable requires augaware to be enabled"
+        make_dataset_augmentations_adjustable()
     # validation dataloader for when it is available
     if cfg.data.dataset == "custom" and (cfg.data.no_labels or cfg.data.val_path is None):
         val_loader = None
@@ -513,5 +515,80 @@ def main(cfg: DictConfig):
     trainer = Trainer(**trainer_kwargs)
     trainer.validate(model, dataloaders=[val_loader], ckpt_path=ckpt_path)
 
+    #sweep_analysis(model, cfg, wandb_logger, variable='rrc')
+
+def sweep_analysis(model, cfg, logger, variable='rrc'):
+    assert variable in ['rrc']
+
+    if variable == 'rrc':
+        sweep_values = np.linspace(1.0, 0.08, 20)
+
+    accuracy_values = np.zeros((len(sweep_values), 10))
+    for idx, val in enumerate(sweep_values):
+        print(f"Starting {variable} sweep with val {val}")
+
+        pipelines = []
+        for aug_cfg in cfg.augmentations:
+            all_keys = list(aug_cfg.keys())
+            for key in all_keys:
+                if key not in ['crop_size', 'num_crops', variable]:
+                    aug_cfg[key].prob = 0
+
+            if variable == 'rrc':
+                aug_cfg[variable].crop_max_scale = float(val)
+                aug_cfg[variable].crop_min_scale = float(val)
+
+            pipelines.append(
+                NCropAugmentation(
+                    build_transform_pipeline(cfg.data.dataset, aug_cfg), aug_cfg.num_crops
+                )
+            )
+        transform = FullTransformPipeline(pipelines)
+
+        train_dataset = prepare_datasets(
+            cfg.data.dataset,
+            transform,
+            train_data_path=cfg.data.train_path,
+            data_format=cfg.data.format,
+            no_labels=False,
+            data_fraction=cfg.data.fraction,
+            use_val=True
+        )
+        train_loader = prepare_dataloader(
+            train_dataset, batch_size=cfg.optimizer.batch_size, num_workers=cfg.data.num_workers, shuffle=False
+        )
+
+        preds = []
+        all_targets = []
+        for batch in tqdm.tqdm(train_loader):
+            batch_idx, data, targets = batch
+            
+            loss, outs = model.training_step(batch, 0)
+            predicted_label = torch.argmax(outs["shared_logits"][0], dim=1)
+            preds.append(predicted_label)
+
+            all_targets.append(targets)
+
+        targets = torch.concat(all_targets).cuda()
+        preds = torch.concat(preds).cuda()
+
+        # compute accuracy for each of the 10 classes
+        for i in range(10):
+            accuracy_values[idx, i] = (preds[targets == i] == i).float().mean()
+
+
+    fig, axs = plt.subplots(nrows=1, ncols=1)
+
+    for i in range(10):
+        class_name = train_loader.dataset.classes[i]
+        axs.plot(sweep_values, accuracy_values[:, i], label=class_name)
+    axs.set_title(f"Accuracy vs {variable}")
+    axs.set_xlabel(variable)
+    axs.set_ylabel("Accuracy")
+    axs.invert_xaxis()
+    axs.legend(loc='center left', bbox_to_anchor=(1.04, 0.5), borderaxespad=0)
+    plt.tight_layout()
+    logger.log_image(f'{variable}_sweep_accuracy', images=[wandb.Image(fig)])
+    
 if __name__ == "__main__":
     main()

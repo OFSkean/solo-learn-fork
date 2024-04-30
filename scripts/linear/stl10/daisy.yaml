@@ -10,11 +10,11 @@ hydra:
   run:
     dir: .
 
-name: "augrelius-stl10-linear"
+name: "daisy-stl10-linear"
 pretrained_feature_extractor: None
 backbone:
   name: "resnet18"
-pretrain_method: "augrelius"
+pretrain_method: "daisy"
 data:
   dataset: stl10
   train_path: "./datasets/stl10"

@@ -1,39 +1,29 @@
 program: main_pretrain.py
 project: augrelius
-name: augrelius_multiview_projector
+name: augrelius_cropsize2
 
 command:
   - ${env}
   - python3
   - ${program}
   - "--config-path=scripts/pretrain/stl10"
-  - "--config-name=augrelius.yaml"
+  - "--config-name=daisy.yaml"
   - ${args_no_hyphens}
+  - ++method_kwargs.proj_output_dim=1024
+  - ++augmentations.0.num_crops=2
+  - ++method_kwargs.conde_loss_weight=1.0
+  - ++method_kwargs.exclusive_loss_weight=1.0
+  - ++method_kwargs.invariance_loss_weight=20.0
 
 method: grid
 metric:
   name: val_acc1
   goal: maximize
 
-# early_terminate:
-#     type: hyperband
-#     min_iter: 100
-#     eta: 2
-#     s: 2
 
 parameters:
   # ADJUSTABLE PARAMETERS
-  method_kwargs.conde_loss_weight:
-    values: [1.0, 2.0, 5.0]
-  method_kwargs.exclusive_loss_weight:
-    values: [1.0, 2.0, 5.0]
-  method_kwargs.invariance_loss_weight:
-    values: [10.0, 20.0, 30.0]
-  method_kwargs.projector_type:
-    values: ["linear", "identity"]
-  method_kwargs.proj_output_dim:
-    values: [1024]
-  augmentations.0.num_crops:
-    values: [4, 8]
+  augmentations.0.rrc.crop_min_scale:
+    values: [0.08, 0.12842105263157894, 0.1768421052631579, 0.22526315789473683, 0.2736842105263158, 0.32210526315789473, 0.3705263157894737, 0.4189473684210527, 0.4673684210526316, 0.5157894736842105, 0.5642105263157895, 0.6126315789473684, 0.6610526315789473, 0.7094736842105263, 0.7578947368421053, 0.8063157894736842, 0.8547368421052631, 0.903157894736842, 0.951578947368421, 1.0]
 
   

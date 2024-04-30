@@ -61,7 +61,7 @@ def add_and_assert_dataset_cfg(cfg: omegaconf.DictConfig) -> omegaconf.DictConfi
     cfg.debug_augmentations = omegaconf_select(cfg, "debug_augmentations", False)
 
     cfg.data.augaware = omegaconf_select(cfg, "data.augaware", False)
-
+    cfg.data.augadjustable = omegaconf_select(cfg, "data.augadjustable", False)
     return cfg
 
 

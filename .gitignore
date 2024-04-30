@@ -18,6 +18,11 @@ datasets/
 *.tar
 *.pkl
 
+# data
+*.npy
+*.png
+*.csv
+
 bash_files/*.png
 bash_files/*.jpg
 bash_files/*.jpeg

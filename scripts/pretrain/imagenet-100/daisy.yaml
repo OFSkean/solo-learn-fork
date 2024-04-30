@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - augmentations: symmetric.yaml
+  - augmentations: asymmetric.yaml
   - wandb: private.yaml
   - override hydra/hydra_logging: disabled
   - override hydra/job_logging: disabled
@@ -11,25 +11,21 @@ hydra:
   run:
     dir: .
 
-name: "augrelius-stl10"
-method: "augrelius"
+name: "daisy-imagenet100"
+method: "daisy"
 backbone:
   name: "resnet18"
 method_kwargs:
   proj_hidden_dim: 2048
-  proj_output_dim: 1024
-  kernel_type: gaussian
-  alpha: 1.01
-  conde_loss_weight: 1.0
-  exclusive_loss_weight: 1.0
-  invariance_loss_weight: 20.0
+  proj_output_dim: 2048
+  shared_dim: 1024
+  exclusive_dim: 1024
 data:
-  dataset: stl10 # change here for cifar100
-  train_path: "./datasets/stl10"
-  val_path: "./datasets/stl10"
-  format: "image_folder"
+  dataset: imagenet100
+  train_path: "./datasets/imagenet-100/train"
+  val_path: "./datasets/imagenet-100/val"
+  format: "dali"
   num_workers: 16
-  augaware: True
 optimizer:
   name: "lars"
   batch_size: 256
@@ -47,10 +43,10 @@ checkpoint:
   dir: "trained_models"
   frequency: 1
 auto_resume:
-  enabled: False
+  enabled: True
 
 # overwrite PL stuff
-max_epochs: 500
+max_epochs: 400
 devices: [0]
 sync_batchnorm: True
 accelerator: "gpu"

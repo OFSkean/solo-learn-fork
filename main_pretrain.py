@@ -35,7 +35,8 @@ from solo.data.pretrain_dataloader import (
     build_transform_pipeline,
     prepare_dataloader,
     prepare_datasets,
-    make_transforms_augmentation_aware
+    make_transforms_augmentation_aware,
+    make_dataset_augmentations_adjustable
 )
 from solo.methods import METHODS
 from solo.utils.auto_resumer import AutoResumer
@@ -70,7 +71,7 @@ def main(cfg: DictConfig):
     assert cfg.method in METHODS, f"Choose from {METHODS.keys()}"
 
     if cfg.data.num_large_crops != 2:
-        assert cfg.method in ["wmse", "mae", "augrelius"]
+        assert cfg.method in ["wmse", "mae", "daisy"]
 
     model = METHODS[cfg.method](cfg)
     make_contiguous(model)
@@ -81,6 +82,10 @@ def main(cfg: DictConfig):
     # pretrain dataloader
     if cfg.data.augaware:
         make_transforms_augmentation_aware()
+    if cfg.data.augadjustable:
+        assert cfg.data.augaware, "augadjustable requires augaware to be enabled"
+        make_dataset_augmentations_adjustable()
+
         
     # validation dataloader for when it is available
     if cfg.data.dataset == "custom" and (cfg.data.no_labels or cfg.data.val_path is None):
