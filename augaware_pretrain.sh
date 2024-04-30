@@ -1,5 +1,5 @@
 DATASET="stl10"
-CONFIG_NAME="augrelius.yaml"
+CONFIG_NAME="daisy.yaml"
 
 # check if data is cifar
 if [ "$DATASET" == "cifar10" ] || [ "$DATASET" == "cifar100" ]; then
@@ -27,7 +27,7 @@ CUDA_LAUNCH_BLOCKING=1 python3 -u main_pretrain.py \
     ++data.augadjustable=True \
     ++wandb.project="augrelius" \
     ++wandb.enabled=True \
-    ++name="owl_adjustable_cropsizes" \
+    ++name="adjust_008_base" \
     ++augmentations.0.num_crops=2 \
     # ++data.train_path="./datasets/imagenet100/train" \
     # ++data.val_path="./datasets/imagenet100/val" \

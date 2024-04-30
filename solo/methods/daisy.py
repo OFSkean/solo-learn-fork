@@ -45,8 +45,8 @@ class Daisy(BaseMethod):
         """
         super().__init__(cfg)
 
-        self.extender_output_dim: int = cfg.method_kwargs.extender_output_dim
-        self.extender_hidden_dim: int = cfg.method_kwargs.extender_output_dim
+        # self.extender_output_dim: int = cfg.method_kwargs.extender_output_dim
+        # self.extender_hidden_dim: int = cfg.method_kwargs.extender_output_dim
         self.proj_hidden_dim: int = cfg.method_kwargs.proj_hidden_dim
         self.proj_output_dim: int = cfg.method_kwargs.proj_output_dim
         self.shared_dim: int = cfg.method_kwargs.proj_output_dim // 2
@@ -59,39 +59,53 @@ class Daisy(BaseMethod):
         self.kernel_type: str = cfg.method_kwargs.kernel_type
         self.alpha: float = cfg.method_kwargs.alpha
 
-        # extender
-        if cfg.method_kwargs.extender_type == "mlp":
-            self.extender = nn.Sequential(
-                nn.Linear(self.features_dim, self.extender_hidden_dim),
-                nn.BatchNorm1d(self.extender_hidden_dim),
-                nn.ReLU(),
-                nn.Linear(self.extender_hidden_dim, self.extender_hidden_dim),
-                nn.BatchNorm1d(self.extender_hidden_dim),
-                nn.ReLU(),
-                nn.Linear(self.extender_hidden_dim, self.extender_output_dim),
-            )
-        elif cfg.method_kwargs.extender_type == "identity":
-            self.extender_output_dim = self.features_dim
-            self.shared_dim = self.features_dim//2
-            self.exclusive_dim = self.features_dim//2
-            self.extender = nn.Identity()
+        # # extender
+        # if cfg.method_kwargs.extender_type == "mlp":
+        #     self.extender = nn.Sequential(
+        #         nn.Linear(self.features_dim, self.extender_hidden_dim),
+        #         nn.BatchNorm1d(self.extender_hidden_dim),
+        #         nn.ReLU(),
+        #         nn.Linear(self.extender_hidden_dim, self.extender_hidden_dim),
+        #         nn.BatchNorm1d(self.extender_hidden_dim),
+        #         nn.ReLU(),
+        #         nn.Linear(self.extender_hidden_dim, self.extender_output_dim),
+        #     )
+        # elif cfg.method_kwargs.extender_type == "identity":
+        #     self.extender_output_dim = self.features_dim
+        #     self.shared_dim = self.features_dim//2
+        #     self.exclusive_dim = self.features_dim//2
+        #     self.extender = nn.Identity()
 
-        elif cfg.method_kwargs.extender_type == "linear":
-            self.extender = nn.Sequential(
-                nn.Linear(self.features_dim, self.extender_output_dim),
-            )
+        # elif cfg.method_kwargs.extender_type == "linear":
+        #     self.extender = nn.Sequential(
+        #         nn.Linear(self.features_dim, self.extender_output_dim),
+        #     )
+
+        # projector
+        self.projector = nn.Sequential(
+           nn.Linear(self.features_dim, self.proj_hidden_dim),
+           nn.BatchNorm1d(self.proj_hidden_dim),
+           nn.ReLU(),
+           nn.Linear(self.proj_hidden_dim, self.proj_hidden_dim),
+           nn.BatchNorm1d(self.proj_hidden_dim),
+           nn.ReLU(),
+           nn.Linear(self.proj_hidden_dim, self.proj_output_dim),
+        )
 
         # augmentation predictor
         self.augmentation_regressor = nn.Sequential(
-            nn.Linear(self.exclusive_dim, 13),
+            nn.Linear(self.exclusive_dim, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 13),
         )
 
         #classifier
         self.classifier_shared = nn.Linear(self.shared_dim, self.num_classes)
         self.classifier_exclusive = nn.Linear(self.exclusive_dim, self.num_classes)
         self.classifier_both = nn.Linear(self.proj_output_dim, self.num_classes)
+        self.classifier_feats = nn.Linear(self.features_dim, self.num_classes)
 
-        del self.classifier
+        del self.classifier # remove the parent classifier that was instantiated in the superclass
 
         # for analysis of training outputs
         self.return_train_outputs = cfg.return_train_outputs
@@ -109,10 +123,9 @@ class Daisy(BaseMethod):
 
         cfg = super(Daisy, Daisy).add_and_assert_specific_cfg(cfg)
 
-        assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.extender_output_dim")
+        # assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.extender_output_dim")
         assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.proj_output_dim")
-        assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.extender_type")
-        assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.projector_type")
+        # assert not omegaconf.OmegaConf.is_missing(cfg, "method_kwargs.extender_type")
 
         # conde arguments
         cfg.method_kwargs.kernel_type = omegaconf_select(cfg, "method_kwargs.kernel_type", "gaussian")
@@ -123,16 +136,16 @@ class Daisy(BaseMethod):
         cfg.method_kwargs.exclusive_loss_weight = omegaconf_select(cfg, "method_kwargs.exclusive_loss_weight", 1.0)
         cfg.method_kwargs.invariance_loss_weight = omegaconf_select(cfg, "method_kwargs.invariance_loss_weight", 1.0)
 
-        # extender arguments
-        cfg.method_kwargs.projector_type = omegaconf_select(cfg, "method_kwargs.extender_type", "mlp")
-        cfg.method_kwargs.extender_output_dim = omegaconf_select(cfg, "method_kwargs.extender_output_dim", 1024)
-        cfg.method_kwargs.extender_hidden_dim = omegaconf_select(cfg, "method_kwargs.extender_hidden_dim", 512)
-        assert cfg.method_kwargs.projector_type in ["mlp", "identity", "linear"]
+        # # extender arguments
+        # cfg.method_kwargs.extender_type = omegaconf_select(cfg, "method_kwargs.extender_type", "mlp")
+        # cfg.method_kwargs.extender_output_dim = omegaconf_select(cfg, "method_kwargs.extender_output_dim", 1024)
+        # cfg.method_kwargs.extender_hidden_dim = omegaconf_select(cfg, "method_kwargs.extender_hidden_dim", 512)
+        # assert cfg.method_kwargs.extender_type in ["mlp", "identity", "linear"]
 
-        # projector arguments
+        # # projector arguments
         cfg.method_kwargs.projector_type = omegaconf_select(cfg, "method_kwargs.projector_type", "mlp")
-        cfg.method_kwargs.extender_output_dim = omegaconf_select(cfg, "method_kwargs.projector_output_dim", 1024)
-        cfg.method_kwargs.extender_hidden_dim = omegaconf_select(cfg, "method_kwargs.projector_hidden_dim", 2048)
+        cfg.method_kwargs.proj_output_dim = omegaconf_select(cfg, "method_kwargs.proj_output_dim", 1024)
+        cfg.method_kwargs.proj_hidden_dim = omegaconf_select(cfg, "method_kwargs.proj_hidden_dim", 2048)
         assert cfg.method_kwargs.projector_type in ["mlp", "linear", "identity"]
 
         cfg.return_train_outputs = omegaconf_select(cfg, "return_train_outputs", False)
@@ -145,14 +158,14 @@ class Daisy(BaseMethod):
         Returns:
             List[dict]: list of learnable parameters.
         """
-        base_learnable_params = [{"name": "mlp", "params": self.mlp.parameters()},
-                                 {"name": "backbone", "params": self.backbone.parameters()},
+        base_learnable_params = [{"name": "backbone", "params": self.backbone.parameters()},
                                  {"name": "augmentation_predictor", "params": self.augmentation_regressor.parameters()},
-                                 {"name": "projector", "params": self.mlp.parameters()}]
+                                 {"name": "projector", "params": self.projector.parameters()}]
         
         classifier_learnable_params = [{"name": "classifier_shared", "params": self.classifier_shared.parameters(),  "lr": self.classifier_lr, "weight_decay": 0},
                                        {"name": "classifier_exclusive", "params": self.classifier_exclusive.parameters(),  "lr": self.classifier_lr, "weight_decay": 0},
-                                       {"name": "classifier_both", "params": self.classifier_both.parameters(),  "lr": self.classifier_lr, "weight_decay": 0}]
+                                       {"name": "classifier_both", "params": self.classifier_both.parameters(),  "lr": self.classifier_lr, "weight_decay": 0},
+                                       {"name": "classifier_feats", "params": self.classifier_feats.parameters(),  "lr": self.classifier_lr, "weight_decay": 0}]
 
         return base_learnable_params + classifier_learnable_params
 
@@ -169,29 +182,28 @@ class Daisy(BaseMethod):
             X = X.to(memory_format=torch.channels_last)
         X = X.cuda()
         feats = self.backbone(X)
-        feats = self.mlp(feats)
+        feats_logits = self.classifier_feats(feats)
+        projections = self.projector(feats)
 
-        # feats =  (feats - feats.mean(0)) / feats.std(0) # NxD
-        # feats =  (feats.shape[1]**0.5) * feats / torch.norm(feats, dim=0)
-
-        shared_dims, exclusive_dims = torch.split(feats, [self.shared_dim, self.exclusive_dim], dim=1)
+        shared_dims, exclusive_dims = torch.split(projections, [self.shared_dim, self.exclusive_dim], dim=1)
+        augmentation_predictions = self.augmentation_regressor(exclusive_dims)
 
         shared_logits = self.classifier_shared(shared_dims.detach())
         exclusive_logits = self.classifier_exclusive(exclusive_dims.detach())
-        both_logits = self.classifier_both(feats.detach())
+        both_logits = self.classifier_both(projections.detach())
 
         return {"shared_logits": shared_logits, 
                 "exclusive_logits": exclusive_logits,
                 "both_logits": both_logits,
+                "feats_logits": feats_logits,
                 "feats": feats,
                 "shared_dims": shared_dims,
                 "exclusive_dims": exclusive_dims,
+                "augmentation_predictions": augmentation_predictions
                 }
     
     # OVERRIDES SHARED_STEP IN THE PARENT CLASS
     def _base_shared_step(self, X: torch.Tensor, targets: torch.Tensor) -> Dict:
-        out = self(X)
-        targets = targets.cuda()
         def update_specificed_online_classifier(logits, classifier_name: str) -> None:
             loss = F.cross_entropy(logits, targets, ignore_index=-1)
 
@@ -203,9 +215,13 @@ class Daisy(BaseMethod):
             acc5_name = f"{classifier_name}_acc5"
             out.update({loss_name: loss, acc1_name: acc1, acc5_name: acc5})
 
+        out = self(X)
+        targets = targets.cuda()
+        
         update_specificed_online_classifier(out["shared_logits"], "class_shared")
         update_specificed_online_classifier(out["exclusive_logits"], "class_exclusive")
         update_specificed_online_classifier(out["both_logits"], "class_both")
+        update_specificed_online_classifier(out["feats_logits"], "class_feats")
         
         return out
     
@@ -253,20 +269,6 @@ class Daisy(BaseMethod):
         outs = [self.base_training_step(x, targets) for x in X[: self.num_large_crops]]
         outs = {k: [out[k] for out in outs] for k in outs[0].keys()}
 
-
-        if self.multicrop:
-            multicrop_outs = [self.multicrop_forward(x) for x in X[self.num_large_crops :]]
-            for k in multicrop_outs[0].keys():
-                outs[k] = outs.get(k, []) + [out[k] for out in multicrop_outs]
-
-        if self.knn_eval:
-            targets = targets.repeat(self.num_large_crops)
-            mask = targets != -1
-            self.knn(
-                train_features=torch.cat(outs["feats"][: self.num_large_crops])[mask].detach(),
-                train_targets=targets[mask],
-            )
-
         outs, conde_loss, exclusive_loss, shared_loss = self.compute_ssl_losses(outs, params_targets)
 
         self.log("train_conde_loss", conde_loss, sync_dist=True)
@@ -277,8 +279,9 @@ class Daisy(BaseMethod):
         outs = log_classifier_loss(outs, "class_shared")
         outs = log_classifier_loss(outs, "class_exclusive")
         outs = log_classifier_loss(outs, "class_both")
+        outs = log_classifier_loss(outs, "class_feats")
 
-        class_loss = outs["class_shared_loss"] + outs["class_exclusive_loss"] + outs["class_both_loss"]
+        class_loss = outs["class_shared_loss"] + outs["class_exclusive_loss"] + outs["class_both_loss"] + outs["class_feats_loss"]
 
         full_loss = class_loss + \
                     -(self.conde_loss_weight * conde_loss) + \
@@ -288,7 +291,7 @@ class Daisy(BaseMethod):
         should_adjust_params = self.current_epoch > 99
         self.trainer.train_dataloader.dataset.update_augmentation_parameters(
             sample_indices.tolist(), 
-            outs["augmentation_errors"][0].tolist(), 
+            outs["augmentation_errors"].mean(dim=0).tolist(), 
             should_adjust=should_adjust_params
         )
 
@@ -297,6 +300,27 @@ class Daisy(BaseMethod):
         else:
             return full_loss
     
+    def compute_ssl_losses(self, outs: Dict[str, Any], params_targets: torch.Tensor):
+        conde_loss = multiview_conditional_entropy_loss(
+                        outs["shared_dims"], 
+                        outs["exclusive_dims"], 
+                        self.kernel_type, 
+                        self.alpha
+                    )
+
+        shared_invariance_loss = self.multiview_shared_invariance_loss(outs["shared_dims"])
+        
+        exclusive_invariance_loss, diffs_per_batch, phats_per_batch = self.multiview_exclusive_invariance_loss(
+                                        outs["exclusive_dims"],
+                                        params_targets
+                                    )
+        
+        outs.update({"augmentation_errors": torch.stack(diffs_per_batch)})
+        outs.update({"phats": phats_per_batch})
+
+        return outs, conde_loss, exclusive_invariance_loss, shared_invariance_loss
+
+        
     def compute_exclusive_invariance_loss(self, e_i, e_j, p_i, p_j):
         e_diff = e_i - e_j
         p_diff_hat = self.augmentation_regressor(e_diff)
@@ -341,27 +365,7 @@ class Daisy(BaseMethod):
 
         return total_shared_loss
 
-    def compute_ssl_losses(self, outs: Dict[str, Any], params_targets: torch.Tensor):
-        conde_loss = multiview_conditional_entropy_loss(
-                        outs["shared_dims"], 
-                        outs["exclusive_dims"], 
-                        self.kernel_type, 
-                        self.alpha
-                    )
 
-        exclusive_invariance_loss, diffs_per_batch, phats_per_batch = self.multiview_exclusive_invariance_loss(
-                                        outs["exclusive_dims"],
-                                        params_targets
-                                    )
-
-        shared_invariance_loss = self.multiview_shared_invariance_loss(outs["shared_dims"])
-        
-        outs.update({"augmentation_errors": diffs_per_batch})
-        outs.update({"phats": phats_per_batch})
-
-        return outs, conde_loss, exclusive_invariance_loss, shared_invariance_loss
-
-        
     def validation_step(
         self,
         batch: List[torch.Tensor],
@@ -406,9 +410,11 @@ class Daisy(BaseMethod):
         metrics = log_classifier_loss(out, "class_shared")
         metrics.update(log_classifier_loss(out, "class_exclusive"))
         metrics.update(log_classifier_loss(out, "class_both"))
+        metrics.update(log_classifier_loss(out, "class_feats"))
         metrics.update({"batch_size": batch_size})
         metrics.update({"shared_logits": out["shared_logits"]})
         metrics.update({"exclusive_logits": out["exclusive_logits"]})
+        metrics.update({"feats_logits": out["feats_logits"]})
         metrics.update({"targets": targets})
 
         if update_validation_step_outputs:
@@ -422,7 +428,7 @@ class Daisy(BaseMethod):
         """
 
         acc1s = []
-        for loss_type in ["class_shared", "class_exclusive", "class_both"]:
+        for loss_type in ["class_shared", "class_exclusive", "class_both", "class_feats"]:
             val_loss = weighted_mean(self.validation_step_outputs, f"val_{loss_type}_loss", "batch_size")
             val_acc1 = weighted_mean(self.validation_step_outputs, f"val_{loss_type}_acc1", "batch_size")
             val_acc5 = weighted_mean(self.validation_step_outputs, f"val_{loss_type}_acc5", "batch_size")
@@ -431,21 +437,34 @@ class Daisy(BaseMethod):
             self.log_dict(log, sync_dist=True)
             acc1s.append(val_acc1)
 
+        # save current augmentation npy on last epoch
+        if self.current_epoch == self.trainer.max_epochs - 1 or self.current_epoch == self.trainer.max_epochs:
+            self.trainer.train_dataloader.dataset.save_augmentation_parameters()
+
+        # log confusion matrices on last epoch
         if self.current_epoch == self.trainer.max_epochs - 1 or self.current_epoch == self.trainer.max_epochs:
             y_true = torch.tensor([t for out in self.validation_step_outputs for t in out["targets"]]).cuda().float()
             y_shared_pred = torch.concat([torch.argmax(out["shared_logits"], dim=1) for out in self.validation_step_outputs]).cuda().float()
             y_exclusive_pred = torch.concat([torch.argmax(out["exclusive_logits"], dim=1) for out in self.validation_step_outputs]).cuda().float()
+            y_feats_pred = torch.concat([torch.argmax(out["feats_logits"], dim=1) for out in self.validation_step_outputs]).cuda().float()
 
+            # shared
             conf_matrix = MulticlassConfusionMatrix(num_classes=self.num_classes, normalize='true').to(y_true)
             conf_matrix.update(y_shared_pred, y_true)
-            fig_shared, ax_ = conf_matrix.plot(labels=self.trainer.val_dataloaders[0].dataset.classes)
+            fig_shared, ax_ = conf_matrix.plot(labels=self.trainer.val_dataloaders.dataset.classes)
 
+            #exclusive
             conf_matrix = MulticlassConfusionMatrix(num_classes=self.num_classes, normalize='true').to(y_true)
             conf_matrix.update(y_exclusive_pred, y_true)
-            fig_exclusive, ax_ = conf_matrix.plot(labels=self.trainer.val_dataloaders[0].dataset.classes)
+            fig_exclusive, ax_ = conf_matrix.plot(labels=self.trainer.val_dataloaders.dataset.classes)
+
+            # feats
+            conf_matrix = MulticlassConfusionMatrix(num_classes=self.num_classes, normalize='true').to(y_true)
+            conf_matrix.update(y_feats_pred, y_true)
+            fig_feats, ax_ = conf_matrix.plot(labels=self.trainer.val_dataloaders.dataset.classes)
 
             self.logger.log_image("confusion_matrix", 
-                                    images=[wandb.Image(fig_shared), wandb.Image(fig_exclusive)], 
-                                    caption=[f"Shared Confusion {acc1s[0]}", f"Exclusive Confusion {acc1s[1]}"])
+                                    images=[wandb.Image(fig_shared), wandb.Image(fig_exclusive), wandb.Image(fig_feats)], 
+                                    caption=[f"Shared Confusion {acc1s[0]}", f"Exclusive Confusion {acc1s[1]}", f"Feats Confusion {acc1s[2]}"])
 
         self.validation_step_outputs.clear()

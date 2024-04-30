@@ -6,10 +6,8 @@ fi
 
 EXPERIMENT_NAME="$1"
 SEED="$2"
-DATASET="imagenet100"
-CONFIG_NAME="barlow.yaml"
-WANDBID=""
-TRAINED_CHECKPOINT_PATH="/home/AD/ofsk222/Research/opensource/solo-learn-fork/trained_models/barlow_twins/sololearn-in100-checkpoint/barlow-400ep-imagenet100-fv1nl9um-ep=399.ckpt"
+DATASET="stl10"
+CONFIG_NAME="daisy.yaml"
 
 # check if data is cifar
 if [ "$DATASET" == "cifar10" ] || [ "$DATASET" == "cifar100" ]; then
@@ -17,13 +15,12 @@ if [ "$DATASET" == "cifar10" ] || [ "$DATASET" == "cifar100" ]; then
 else
     dataset_config_name="$DATASET"
 fi
-LINEAR_CONFIG_PATH="scripts/linear/imagenet-100"
+LINEAR_CONFIG_PATH="scripts/linear/$dataset_config_name"
 
 echo "Preparing to start linear probe for experiment with name $EXPERIMENT_NAME"
 echo "on dataset $DATASET"
 echo "with config $LINEAR_CONFIG_PATH/$CONFIG_NAME"
 echo "seed is $SEED"
-echo $TRAINED_CHECKPOINT_PATH > last_ckpt.txt
 
 # ####
 # #### PRETRAIN LINEAR PROBE
@@ -33,5 +30,4 @@ CUDA_LAUNCH_BLOCKING=1 python3 -u main_linear.py \
     --config-name $CONFIG_NAME \
     ++name="$EXPERIMENT_NAME-linear-$WANDBID-$SEED" \
     ++seed="$SEED" \
-    ++data.precompute_embeddings=True \
     ++data.format="image_folder" \
