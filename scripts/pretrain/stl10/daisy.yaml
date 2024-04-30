@@ -29,7 +29,7 @@ data:
   train_path: "./datasets/stl10"
   val_path: "./datasets/stl10"
   format: "image_folder"
-  num_workers: 16
+  num_workers: 8
   augaware: True
   adjustable_dataloader:
     enabled: True
@@ -37,7 +37,7 @@ data:
     initializer_csv_path: "stl10_preprocessed_info.csv"
     final_csv_path: "daisy_final_stl10_info.csv"
     adjustable_augmentations: ['rrc', 'cj_b', 'cj_s', 'cj_c']
-    epochs_before_adjusting: 1
+    epochs_before_adjusting: 100
 optimizer:
   name: "lars"
   batch_size: 256
@@ -58,7 +58,7 @@ auto_resume:
   enabled: False
 
 # overwrite PL stuff
-max_epochs: 5
+max_epochs: 500
 devices: [0]
 sync_batchnorm: True
 accelerator: "gpu"
