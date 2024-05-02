@@ -1,0 +1,32 @@
+program: main_pretrain.py
+project: augrelius
+name: daisy_adjustable_params_sweep2
+
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - "--config-path=scripts/pretrain/stl10"
+  - "--config-name=daisy.yaml"
+  - ${args_no_hyphens}
+  - ++method_kwargs.conde_loss_weight=1.0
+  - ++method_kwargs.exclusive_loss_weight=1.0
+  - ++method_kwargs.invariance_loss_weight=20.0
+
+method: grid
+metric:
+  name: val_class_feats_acc1
+  goal: maximize
+
+parameters:
+  # ADJUSTABLE PARAMETERS
+  augmentations.0.num_crops:
+    value: 2
+  data.adjustable_dataloader.adjustable_augmentations:
+    values: [['rrc', 'cj_brightness', 'cj_saturation', 'cj_contrast'], ['cj_brightness', 'cj_saturation', 'cj_contrast'], ['rrc'], []]
+  data.adjustable_dataloader.custom_defaults:
+    values: [[], ['rrc'], ['cj_brightness', 'cj_contrast', 'cj_saturation'], ['rrc', 'cj_brightness', 'cj_contrast', 'cj_saturation']]
+  data.adjustable_dataloader.epochs_before_adjusting:
+    values: [1, 100, 300]
+
+  

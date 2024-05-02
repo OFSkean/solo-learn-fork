@@ -8,8 +8,10 @@ from PIL import Image, ImageFilter, ImageOps
 from solo.data.pretrain_dataloader import NCropAugmentation, GaussianBlur, Equalization, Solarization
 from itertools import chain
 import pandas as pd
+import copy
+import numpy as np
 
-augmentation_error_names = [
+augmentation_error_names = [f'{x}_error' for x in [
     'rcc_i', 'rcc_j', 'rcc_h', 'rcc_w',
     'cj_brightness', 'cj_contrast', 'cj_saturation', 'cj_hue',
     'gb_sigma',
@@ -17,7 +19,7 @@ augmentation_error_names = [
     'solarization',
     'random_gray_scale',
     'random_horizontal_flip'
-]
+]]
 
 def adjustable_augmentation_dataset_with_index(cfg, DatasetClass: Type[Dataset]) -> Type[Dataset]:
     """Factory for datasets that also returns the data index.
@@ -37,10 +39,32 @@ def adjustable_augmentation_dataset_with_index(cfg, DatasetClass: Type[Dataset])
             self.transform = None
             
             self.df = pd.read_csv(cfg.data.adjustable_dataloader.initializer_csv_path)
-            self.df['original_rrc_area_lower_bound'] = self.df['rrc_area_lower_bound']
-            self.df['cj_brightness_upper_bound'] = 0.8
-            self.df['cj_contrast_upper_bound'] = 0.8
-            self.df['cj_saturation_upper_bound'] = 0.8
+
+            self.augs_to_adjust = cfg.data.adjustable_dataloader.adjustable_augmentations
+            for aug in self.augs_to_adjust:
+                assert aug in ['rrc', 'cj_brightness', 'cj_contrast', 'cj_saturation'], f"Adjusting for the Augmentation {aug} not supported"
+
+            for aug in cfg.data.adjustable_dataloader.custom_defaults:
+                assert aug in ['rrc', 'cj_brightness', 'cj_contrast', 'cj_saturation'], f"Custom defaults for the Augmentation {aug} not supported"
+
+            if 'rrc' not in cfg.data.adjustable_dataloader.custom_defaults:
+                self.df['rrc_area_lower_bound'] = 0.08
+            if 'cj_brightness' not in cfg.data.adjustable_dataloader.custom_defaults:
+                self.df['cj_brightness_lower_bound'] = 0.2
+                self.df['cj_brightness_upper_bound'] = 1.8
+            if 'cj_contrast' not in cfg.data.adjustable_dataloader.custom_defaults:
+                self.df['cj_contrast_lower_bound'] = 0.2
+                self.df['cj_contrast_upper_bound'] = 1.8
+            if 'cj_saturation' not in cfg.data.adjustable_dataloader.custom_defaults:
+                self.df['cj_saturation_lower_bound'] = 0.2
+                self.df['cj_saturation_upper_bound'] = 1.8
+
+            self.df['grey_scale_chance'] = np.where(self.df['is_grey_scale'] == True, 1.0, cfg.augmentations[0].grayscale.prob)
+
+            # save originals in df
+            for var_name in ['rrc_area_lower_bound', 'cj_brightness_lower_bound', 'cj_brightness_upper_bound',
+                            'cj_contrast_lower_bound', 'cj_contrast_upper_bound', 'cj_saturation_lower_bound', 'cj_saturation_upper_bound']:
+                self.df[f'{var_name}_original'] = self.df[var_name]
 
             self.__create_augmentation_error_df_columns()
 
@@ -58,7 +82,7 @@ def adjustable_augmentation_dataset_with_index(cfg, DatasetClass: Type[Dataset])
             self.logging_path = path
 
         def save_augmentation_parameters(self):
-            self.df.to_csv(f"{self.logging_path}/{cfg.data.adjustable_dataloader.final_csv_path}", index=False)
+            self.df.to_csv(f"{self.logging_path}/{cfg.data.adjustable_dataloader.final_csv_path}", index=False, float_format='%g')
 
         def update_augmentation_parameters(self, batch_indices, augmentation_error_values, should_adjust=False):
 
@@ -72,54 +96,60 @@ def adjustable_augmentation_dataset_with_index(cfg, DatasetClass: Type[Dataset])
                 row[augmentation_error_names] = augmentation_error_values[val_loc]
                 values = augmentation_error_values[val_loc]
                 stepsize = cfg.data.adjustable_dataloader.stepsize
-                augs_to_adjust = cfg.data.adjustable_dataloader.adjustable_augmentations
 
-                if 'rrc' in augs_to_adjust:
+                if 'rrc' in self.augs_to_adjust:
                     # adjust rcc as needed
                     rcc_i_name = augmentation_error_names[0]
                     rcc_j_name = augmentation_error_names[1]
                     if any([abs(values[0] - error_mean[rcc_i_name]) > 2 * error_std[rcc_i_name],
                             abs(values[1] - error_mean[rcc_j_name]) > 2 * error_std[rcc_j_name]]):
 
-                        if values[0] <= error_mean[rcc_i_name] and values[1] <= error_mean[rcc_j_name]:
+                        if values[0] <= error_mean[rcc_i_name] or values[1] <= error_mean[rcc_j_name]:
                             # make harder
                             row['rrc_area_lower_bound'] = max(0.08, -stepsize + row['rrc_area_lower_bound'])
-                        elif values[0] >= error_mean[rcc_i_name] and values[1] >= error_mean[rcc_j_name]:
+                        elif values[0] >= error_mean[rcc_i_name] or values[1] >= error_mean[rcc_j_name]:
                             # make easier
                             row['rrc_area_lower_bound'] = min(0.5, stepsize + row['rrc_area_lower_bound'])
 
-                if 'cj_b' in augs_to_adjust:
+                if 'cj_brightness' in self.augs_to_adjust:
                     # adjust brightness as needed
                     cj_b_name = augmentation_error_names[4]
                     if abs(values[4] - error_mean[cj_b_name]) > 2 * error_std[cj_b_name]:
                         if values[4] >= error_mean[cj_b_name]:
                             # make easier
-                            row['cj_brightness_upper_bound'] = max(0.0, -stepsize + row['cj_brightness_upper_bound'])
+                            row['cj_brightness_lower_bound'] = min(1.0, stepsize + row['cj_brightness_lower_bound'])
+                            row['cj_brightness_upper_bound'] = max(1.0, -stepsize + row['cj_brightness_upper_bound'])
                         else:
                             # make harder
-                            row['cj_brightness_upper_bound'] = min(0.8, stepsize + row['cj_brightness_upper_bound'])
+                            row['cj_brightness_lower_bound'] = max(0.2, -stepsize + row['cj_brightness_lower_bound'])
+                            row['cj_brightness_upper_bound'] = min(1.8, stepsize + row['cj_brightness_upper_bound'])
 
-                if 'cj_c' in augs_to_adjust:
+
+                if 'cj_contrast' in self.augs_to_adjust:
                     # adjust contrast as needed
                     cj_c_name = augmentation_error_names[5]
                     if abs(values[5] - error_mean[cj_c_name]) > 2 * error_std[cj_c_name]:
                         if values[5] >= error_mean[cj_c_name]:
                             # make easier
-                            row['cj_contrast_upper_bound'] = max(0.0, -stepsize + row['cj_contrast_upper_bound'])
+                            row['cj_contrast_lower_bound'] = min(1.0, stepsize + row['cj_contrast_lower_bound'])
+                            row['cj_contrast_upper_bound'] = max(1.0, -stepsize + row['cj_contrast_upper_bound'])
                         else:
                             # make harder
-                            row['cj_contrast_upper_bound'] = min(0.8, stepsize + row['cj_contrast_upper_bound'])
+                            row['cj_contrast_lower_bound'] = max(0.2, -stepsize + row['cj_contrast_lower_bound'])
+                            row['cj_contrast_upper_bound'] = min(1.8, stepsize + row['cj_contrast_upper_bound'])
                 
-                if 'cj_s' in augs_to_adjust:
+                if 'cj_saturation' in self.augs_to_adjust:
                     # adjust saturation as needed
                     cj_s_name = augmentation_error_names[6]
                     if abs(values[6] - error_mean[cj_s_name]) > 2 * error_std[cj_s_name]:
                         if values[6] >= error_mean[cj_s_name]:
                             # make easier
-                            row['cj_saturation_upper_bound'] = max(0.0, -stepsize + row['cj_saturation_upper_bound'])
+                            row['cj_saturation_lower_bound'] = min(1.0, stepsize + row['cj_saturation_lower_bound'])
+                            row['cj_saturation_upper_bound'] = max(1.0, -stepsize + row['cj_saturation_upper_bound'])
                         else:
                             # make harder
-                            row['cj_saturation_upper_bound'] = min(0.8, stepsize + row['cj_saturation_upper_bound'])
+                            row['cj_saturation_lower_bound'] = max(0.2, -stepsize + row['cj_saturation_lower_bound'])
+                            row['cj_saturation_upper_bound'] = min(1.8, stepsize + row['cj_saturation_upper_bound'])
 
                 return row
 
@@ -185,8 +215,15 @@ def augaware_compose_transforms_call(self, img, **kwargs):
         if kwargs != {}:
             if isinstance(t, torchvision.transforms.RandomResizedCrop):
                 t.scale = (kwargs['data_row']["rrc_area_lower_bound"], 1.0)
+                
             elif isinstance(t, torchvision.transforms.RandomGrayscale):
-                t.p = 1. if kwargs['data_row']["is_grey_scale"] else t.p
+                t.p = kwargs['data_row']["grey_scale_chance"]
+
+            elif isinstance(t, torchvision.transforms.RandomApply):
+                if isinstance(t.transforms[0], torchvision.transforms.ColorJitter):
+                    t.transforms[0].brightness = (kwargs['data_row']["cj_brightness_lower_bound"], kwargs['data_row']["cj_brightness_upper_bound"])
+                    t.transforms[0].contrast = (kwargs['data_row']["cj_contrast_lower_bound"], kwargs['data_row']["cj_contrast_upper_bound"])
+                    t.transforms[0].saturation = (kwargs['data_row']["cj_saturation_lower_bound"], kwargs['data_row']["cj_saturation_upper_bound"])
 
         img = t(img)
 

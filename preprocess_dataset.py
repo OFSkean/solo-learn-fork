@@ -1,4 +1,3 @@
-# %%
 import argparse
 import torch
 import torchvision
@@ -15,7 +14,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 from transformers import Owlv2Processor, Owlv2ForObjectDetection, Owlv2ImageProcessor
-from PIL import ImageDraw
+from PIL import ImageDraw, ImageStat
+import numpy as np
 
 MEANS_N_STD = {
     "cifar10": ((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
@@ -145,13 +145,55 @@ def is_greyscale(im):
             return False
     return True
 
+def get_image_brightness(im):
+    """
+    Get the brightness of an image
+    """
+    im = im.convert("L")
+    stat = ImageStat.Stat(im)
+    return stat.mean[0]
+
+def get_colorjitter_bounds(df, bound_name):
+    # lower bound is 1 at left, 0.2 at mean and right of mean, linear betweem left and mean
+    normalized_mean = df[bound_name].mean() - df[bound_name].min()
+
+    df[f'cj_{bound_name}_lower_bound'] = 1 - (0.8/normalized_mean)*(df[bound_name]-df[bound_name].min())
+    df[f'cj_{bound_name}_lower_bound'] = df[f'cj_{bound_name}_lower_bound'].clip(lower=0.2)
+
+    
+    # upper bound is 1.0 at right, 1.8 at mean and left of mean, linear betweem right and mean
+    normalized_mean = df[bound_name].max() - df[bound_name].mean()
+    df[f'cj_{bound_name}_upper_bound'] = 1 + (0.8/normalized_mean)*(df[bound_name].max()-df[bound_name])
+    df[f'cj_{bound_name}_upper_bound'] = df[f'cj_{bound_name}_upper_bound'].clip(upper=1.8)
+
+    return df
+    
+def get_image_contrast(im):
+    """
+    Get the contrast of an image
+    """
+    im = im.convert("L")
+    stat = ImageStat.Stat(im)
+    return stat.rms[0]
+
+def get_colorjitter_contrast_bounds(df):
+    pass
+
+def get_image_staturation(im):
+    """
+    Get the saturation of an image
+    """
+    im = im.convert("HSV")
+    return  np.mean(np.array(im)[:,:,1])
+
+def get_colorjitter_saturation_bounds(df):
+    pass
+
 def main():
     args = parse()
     csv_filename = f"{args.dataset}_preprocessed_info.csv"
-
-    if os.path.exists(csv_filename):
-        make_visualizations(csv_filename)
-        return
+    old_info = f"old_{args.dataset}_preprocessed_info.csv"
+    old_info = pd.read_csv(old_info)
 
     train_loader = get_dataloader(args)
     candidate_labels = train_loader.dataset.classes
@@ -167,31 +209,49 @@ def main():
         for idx, batch in enumerate(tqdm.tqdm(train_loader)):
             batch_idx, data, _ = batch
 
-            inputs = processor.__call__(text=[candidate_labels]*len(batch_idx),
-                                         images=data, return_tensors='pt')
-            if len(max_memory_mapping.keys()) == 1:
-                inputs = inputs.to("cuda")
-
-
-            rrc_area_lower_bound, predicted_label, xmins, ymins, xmaxs, ymaxs = bounding_box_for_image(args, model, processor, data, inputs, candidate_labels)
+            if False:
+                inputs = processor.__call__(text=[candidate_labels]*len(batch_idx),
+                                            images=data, return_tensors='pt')
+                if len(max_memory_mapping.keys()) == 1:
+                    inputs = inputs.to("cuda")
+                rrc_area_lower_bound, predicted_label, xmins, ymins, xmaxs, ymaxs = bounding_box_for_image(args, model, processor, data, inputs, candidate_labels)
+            else:
+                rrc_area_lower_bound = old_info["rrc_area_lower_bound"].iloc[batch_idx].tolist()
+                predicted_label = old_info["predicted_label"].iloc[batch_idx].tolist()
+                xmins = old_info["xmin"].iloc[batch_idx].tolist()
+                ymins = old_info["ymin"].iloc[batch_idx].tolist()
+                xmaxs = old_info["xmax"].iloc[batch_idx].tolist()
+                ymaxs = old_info["ymax"].iloc[batch_idx].tolist()
+            
             is_grey_scale = [is_greyscale(im) for im in data]
+            brightness = [get_image_brightness(im) for im in data]
+            contrast = [get_image_contrast(im) for im in data]
+            saturation = [get_image_staturation(im) for im in data]
 
             for a, i in enumerate(batch_idx):
                 preprocessed_info[i] = {
                     "predicted_label": predicted_label[a],
                     "is_grey_scale": is_grey_scale[a],
                     "rrc_area_lower_bound": rrc_area_lower_bound[a],
+                    "brightness": brightness[a],
+                    "contrast": contrast[a],
+                    "saturation": saturation[a],
                     "xmin": xmins[a],
                     "ymin": ymins[a],
                     "xmax": xmaxs[a],
                     "ymax": ymaxs[a]
                 }
-
+                
     # turn preprocessed_info into a pandas array
-    preprocessed_info = pd.DataFrame.from_dict(preprocessed_info, orient="index")
-    preprocessed_info.to_csv(csv_filename)
+    df = pd.DataFrame.from_dict(preprocessed_info, orient="index")
 
-    make_visualizations(csv_filename)
+    # get contrast, brightness, and saturation bounds
+    df = get_colorjitter_bounds(df, "brightness")
+    df = get_colorjitter_bounds(df, "contrast")
+    df = get_colorjitter_bounds(df, "saturation")
+
+    df.to_csv(csv_filename, float_format='%g')
+    #make_visualizations(csv_filename)
 
 def my_collate_fn(batch):
     indices = [idx for idx, _, _ in batch]

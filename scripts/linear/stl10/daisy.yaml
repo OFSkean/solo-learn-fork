@@ -11,7 +11,7 @@ hydra:
     dir: .
 
 name: "daisy-stl10-linear"
-pretrained_feature_extractor: None
+#pretrained_feature_extractor: "/home/AD/ofsk222/Research/opensource/solo-learn-fork/trained_models/daisy/yh0mln62/daisy-stl10-yh0mln62-ep=498.ckpt"
 backbone:
   name: "resnet18"
 pretrain_method: "daisy"

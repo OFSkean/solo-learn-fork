@@ -68,6 +68,7 @@ def add_and_assert_dataset_cfg(cfg: omegaconf.DictConfig) -> omegaconf.DictConfi
     cfg.data.adjustable_dataloader.final_csv_path = omegaconf_select(cfg, "data.adjustable_dataloader.final_csv_path", "final.csv")
     cfg.data.adjustable_dataloader.adjustable_augmentations = omegaconf_select(cfg, "data.adjustable_dataloader.adjustable_augmentations", ['rrc'])
     cfg.data.adjustable_dataloader.epochs_before_adjusting = omegaconf_select(cfg, "data.adjustable_dataloader.epochs_before_adjusting", 100)
+    cfg.data.adjustable_dataloader.custom_defaults = omegaconf_select(cfg, "data.adjustable_dataloader.custom_defaults", [])
     return cfg
 
 

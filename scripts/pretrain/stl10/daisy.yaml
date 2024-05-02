@@ -36,7 +36,8 @@ data:
     stepsize: 0.01
     initializer_csv_path: "stl10_preprocessed_info.csv"
     final_csv_path: "daisy_final_stl10_info.csv"
-    adjustable_augmentations: ['rrc', 'cj_b', 'cj_s', 'cj_c']
+    adjustable_augmentations: ['rrc', 'cj_brightness', 'cj_saturation', 'cj_contrast']
+    custom_defaults: ['rrc', 'cj_brightness', 'cj_saturation', 'cj_contrast']
     epochs_before_adjusting: 100
 optimizer:
   name: "lars"
