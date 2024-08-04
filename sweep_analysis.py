@@ -193,6 +193,6 @@ def make_plots():
 
 
 if __name__ == "__main__":
-    if not os.path.exists("rrc_sweep_accuracies.npy"):
-        main()
+    #if not os.path.exists("rrc_sweep_accuracies.npy"):
+    main()
     make_plots()
